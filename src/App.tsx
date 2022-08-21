@@ -1,7 +1,67 @@
 import React from "react";
 import { MdKeyboardArrowRight } from "react-icons/md";
+import create from "zustand";
+
+interface User {
+  id: string;
+  username: string;
+}
+
+interface State {
+  me: User | undefined;
+  users: User[];
+  setMe: (user: User) => void;
+  addUser: (user: User) => void;
+  removeUser: (id: String) => void;
+  setUsers: (users: User[]) => void;
+}
+
+const useStore = create<State>((set) => ({
+  users: [],
+  me: undefined,
+  setMe: (user) => set(() => ({ me: user })),
+  addUser: (user) => set((state) => ({ users: [...state.users, user] })),
+  removeUser: (id: string) =>
+    set((state) => ({ users: state.users.filter((user) => user.id !== id) })),
+  setUsers: (users) => set(() => ({ users: users })),
+}));
+
+const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
 
 const App: React.FC = () => {
+  const [username, setUsername] = React.useState<String | null>(null);
+  const usernameRef = React.useRef<HTMLInputElement>(null);
+
+  const users = useStore((state) => state.users);
+  const me = useStore((state) => state.me);
+
+  useSocketServer(username);
+
+  if (!username) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center">
+        <div className="flex flex-col gap-4 border border-base-300 p-4">
+          <input
+            placeholder="Username"
+            ref={usernameRef}
+            className="input input-bordered"
+            type="text"
+          />
+          <button
+            className="btn"
+            onClick={() => setUsername(usernameRef.current.value)}
+          >
+            Enter
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (typeof me === "undefined") {
+    return <span>loading</span>;
+  }
+
   return (
     <div className="mx-auto min-h-screen max-w-screen-md flex flex-col items-center">
       <header className="navbar h-16">
@@ -12,7 +72,7 @@ const App: React.FC = () => {
         <div className="navbar-end">
           <img
             className="rounded w-12 h-12"
-            src={`https://ui-avatars.com/api/?name=${"Jacob"}`}
+            src={`https://ui-avatars.com/api/?name=${me.username}`}
             alt="Me"
           />
         </div>
@@ -39,7 +99,19 @@ const App: React.FC = () => {
               fav
             </div>
             {/* all */}
-            <div className="flex flex-col items-center gap-2 py-2">all</div>
+            <div className="flex flex-col items-center gap-2 py-2">
+              {users
+                .filter((user) => user.username !== me.username)
+                .map((user) => (
+                  <div key={user.id}>
+                    <img
+                      className="rounded w-12 h-12"
+                      src={`https://ui-avatars.com/api/?name=${user.username}`}
+                      alt={user.username}
+                    />
+                  </div>
+                ))}
+            </div>
           </div>
         </div>
         {/* chat area */}
@@ -49,6 +121,46 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const useSocketServer = (username: String | null) => {
+  const [socket, setSocket] = React.useState<WebSocket | undefined>();
+
+  const setMe = useStore((state) => state.setMe);
+  const addUser = useStore((state) => state.addUser);
+  const removeUser = useStore((state) => state.removeUser);
+  const setUsers = useStore((state) => state.setUsers);
+
+  React.useEffect(() => {
+    if (socket || !username) return;
+
+    const connection = new WebSocket(WEBSOCKET_URL + username);
+    setSocket(connection);
+
+    connection.onmessage = (e) => {
+      const { type, data } = JSON.parse(e.data);
+      switch (type) {
+        case "setMe":
+          setMe(data);
+          break;
+        case "addUser":
+          addUser(data);
+          break;
+        case "removeUser":
+          removeUser(data);
+          break;
+        case "setUsers":
+          setUsers(data);
+          break;
+        default:
+          break;
+      }
+    };
+
+    connection.onopen = (e) => {};
+
+    return () => connection?.close();
+  }, [username]);
 };
 
 // const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
