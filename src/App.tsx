@@ -1,48 +1,67 @@
 import React from "react";
 import { MdKeyboardArrowRight } from "react-icons/md";
-import create from "zustand";
 
 interface User {
   id: string;
   username: string;
 }
 
-interface State {
-  me: User | undefined;
-  users: User[];
-  setMe: (user: User) => void;
-  addUser: (user: User) => void;
-  removeUser: (id: String) => void;
-  setUsers: (users: User[]) => void;
-}
-
-const useStore = create<State>((set) => ({
-  users: [],
-  me: undefined,
-  setMe: (user) => set(() => ({ me: user })),
-  addUser: (user) => set((state) => ({ users: [...state.users, user] })),
-  removeUser: (id: string) =>
-    set((state) => ({ users: state.users.filter((user) => user.id !== id) })),
-  setUsers: (users) => set(() => ({ users: users })),
-}));
-
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
 
-const App: React.FC = () => {
-  const [username, setUsername] = React.useState<string | null>(null);
-  const [chatId, setChatId] = React.useState<string | null>(null); // userId
-  const [chats, setChats] = React.useState<string[]>([]); // userIds
-  const [socket, setSocket] = React.useState<WebSocket | undefined>();
-  const [message, setMessage] = React.useState("");
+interface LoginViewProps {
+  setUsername: (username: string) => void;
+}
 
+const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
-  const users = useStore((state) => state.users);
-  const me = useStore((state) => state.me);
-  const setMe = useStore((state) => state.setMe);
-  const addUser = useStore((state) => state.addUser);
-  const removeUser = useStore((state) => state.removeUser);
-  const setUsers = useStore((state) => state.setUsers);
+  return (
+    <div className="h-screen w-screen flex items-center justify-center">
+      <div className="flex flex-col gap-4 border border-base-300 p-4">
+        <input
+          placeholder="Username"
+          ref={usernameRef}
+          className="input input-bordered"
+          type="text"
+        />
+        <button
+          className="btn"
+          onClick={() => setUsername(usernameRef.current!.value)}
+        >
+          Enter
+        </button>
+      </div>
+    </div>
+  );
+};
+
+interface MainViewProps {
+  username: string;
+}
+
+const MainView: React.FC<MainViewProps> = ({ username }) => {
+  const [chatId, setChatId] = React.useState<string | null>(null); // userId
+  const [chats, setChats] = React.useState<string[]>([]); // userIds
+  const [message, setMessage] = React.useState("");
+  
+  const [socket, setSocket] = React.useState<WebSocket | undefined>();
+  const [me, setMe] = React.useState<User | null>(null);
+  const [users, setUsers] = React.useState<User[]>([]);
+
+  const [peerConnection, setPeerConnection] = React.useState(
+    new RTCPeerConnection()
+  );
+  const [dataChannel, setDataChannel] = React.useState<RTCDataChannel | null>(
+    null
+  );
+
+  const addUser = (user: User) => {
+    setUsers([...users, user]);
+  };
+
+  const removeUser = (userId: string) => {
+    setUsers(users.filter((user) => user.id !== userId));
+  };
 
   React.useEffect(() => {
     if (socket || !username) return;
@@ -52,7 +71,6 @@ const App: React.FC = () => {
 
     connection.onmessage = (e) => {
       const { type, data } = JSON.parse(e.data);
-      console.log(data);
       switch (type) {
         case "candidate":
           if (data.description.type === "offer") {
@@ -89,26 +107,16 @@ const App: React.FC = () => {
     return () => connection?.close();
   }, [username]);
 
-  const [peerConnection, setPeerConnection] = React.useState(
-    new RTCPeerConnection()
-  );
-  const [dataChannel, setDataChannel] = React.useState<RTCDataChannel | null>(
-    null
-  );
-
   peerConnection.onicecandidate = () => {
-    console.log("New ice candidate: ");
-    console.log(peerConnection.localDescription);
-
-    console.log(chats);
+    console.log("New ice candidate");
 
     socket?.send(
       JSON.stringify({
         type: "candidate",
         data: {
-          from: me.id,
+          from: me?.id,
           to:
-            peerConnection.localDescription.type === "offer"
+            peerConnection.localDescription?.type === "offer"
               ? chatId
               : chats[chats.length - 1],
           description: peerConnection.localDescription,
@@ -148,34 +156,11 @@ const App: React.FC = () => {
   };
 
   const sendMessage = () => {
-    dataChannel.send(message);
+    dataChannel?.send(message);
     setMessage("");
   };
 
-  if (!username) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center">
-        <div className="flex flex-col gap-4 border border-base-300 p-4">
-          <input
-            placeholder="Username"
-            ref={usernameRef}
-            className="input input-bordered"
-            type="text"
-          />
-          <button
-            className="btn"
-            onClick={() => setUsername(usernameRef.current.value)}
-          >
-            Enter
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (typeof me === "undefined") {
-    return <span>loading</span>;
-  }
+  if (!me) return null;
 
   return (
     <div className="mx-auto min-h-screen max-w-screen-md flex flex-col items-center">
@@ -196,7 +181,6 @@ const App: React.FC = () => {
       <main className="w-full border border-base-300 flex flex-col items-center p-2">
         <h1>A peer to peer chat application.</h1>
       </main>
-
       <div className="grow w-full max-w-screen-md flex flex-row">
         {/* sidebar */}
         <div className="grow max-w-[80px] flex flex-col gap-1 border-x border-base-300">
@@ -216,7 +200,7 @@ const App: React.FC = () => {
             {/* all */}
             <div className="flex flex-col items-center gap-2 py-2">
               {users
-                .filter((user) => user.username !== me.username)
+                .filter((user) => user.id !== me.id)
                 .map((user) => (
                   <div
                     key={user.id}
@@ -252,6 +236,16 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const App: React.FC = () => {
+  const [username, setUsername] = React.useState<string | null>(null);
+
+  if (!username) {
+    return <LoginView setUsername={setUsername} />;
+  }
+
+  return <MainView username={username} />;
 };
 
 export default App;
