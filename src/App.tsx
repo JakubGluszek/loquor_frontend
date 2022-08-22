@@ -6,15 +6,10 @@ interface User {
   username: string;
 }
 
-interface ChatData {
-  user: User;
-  dataChannel?: RTCDataChannel;
-}
-
 interface Peer {
   userId: string;
-  rtc: RTCPeerConnection;
-  dc: RTCDataChannel;
+  pc: RTCPeerConnection;
+  dc?: RTCDataChannel;
 }
 
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
@@ -46,21 +41,17 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   );
 };
 
-interface ChatViewProps {
-  data: ChatData;
-}
+interface ChatViewProps {}
 
-const ChatView: React.FC<ChatViewProps> = ({ data }) => {
+const ChatView: React.FC<ChatViewProps> = ({}) => {
   const [message, setMessage] = React.useState("");
 
   const sendMessage = () => {
-    data.dataChannel?.send(message);
     setMessage("");
   };
 
   return (
     <div>
-      <span>ChatData is open</span>
       <input
         value={message}
         onChange={(e) => setMessage(e.currentTarget.value)}
@@ -80,10 +71,10 @@ interface MainViewProps {
 const MainView: React.FC<MainViewProps> = ({ username }) => {
   const [socket, setSocket] = React.useState<WebSocket | null>(null);
   const [peers, setPeers] = React.useState<Peer[]>([]);
+  const [chat, setChat] = React.useState<string | null>(null); // userId
 
   const [me, setMe] = React.useState<User | null>(null);
   const [users, setUsers] = React.useState<User[]>([]);
-  const [chat, setChat] = React.useState<ChatData | null>(null);
 
   const addUser = (user: User) => {
     setUsers([...users, user]);
@@ -93,66 +84,46 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     setUsers(users.filter((user) => user.id !== userId));
   };
 
-  const handlePeerConnection = (user: User) => {
-    // check if peer connection exists with this user
-    for (let i = 0; i < peers.length; i++) {
-      if (peers[i].userId === user.id) {
-        return;
-      }
-    }
+  const openChat = (user: User) => {
+    let pc = new RTCPeerConnection();
 
-    let rtc = new RTCPeerConnection();
-    let peer = {
-      userId: user.id,
-      rtc: rtc,
-      dc: rtc.createDataChannel(user.id),
+    pc.ondatachannel = (e) => {
+      let dc = e.channel;
+      dc.onopen = () => console.log("Connection is open!");
+      dc.onmessage = (e) => console.log("Received a message: " + e.data);
+      setPeers(
+        peers.filter((peer) =>
+          peer.userId !== user.id ? peer : { userId: user.id, pc: pc, dc: dc }
+        )
+      );
     };
-    setPeers([...peers, peer]);
-    console.log("Created a new peer connection.");
 
-    // create an offer
-    peer.rtc
-      .createOffer()
-      .then((offer) => peer?.rtc.setLocalDescription(offer))
-      .then(() => console.log("Offer created & set as local description."));
-
-    setChat({ user, dataChannel: peer.dc });
-    console.log("Created a new data channel");
-    return;
-  };
-
-  for (let i = 0; i < peers.length; i++) {
-    peers[i].rtc.onicecandidate = (e) => {
+    pc.addEventListener("icecandidate", (e) => {
       console.log("New ice candidate");
-
       socket?.send(
         JSON.stringify({
           type: "candidate",
           data: {
-            to: peers[i].userId,
             from: me?.id,
-            description: peers[i].rtc.localDescription,
+            to: user.id,
+            description: pc.localDescription,
+            socket: false,
           },
         })
       );
-    };
+    });
 
-    peers[i].dc.onopen = () => console.log("Connection is open!");
-    peers[i].dc.onmessage = (e) => console.log("Received a message: " + e.data);
+    let dc = pc.createDataChannel(user.id);
 
-    peers[i].rtc.ondatachannel = (e) => {
-      let dc = e.channel;
-      dc.onopen = () => console.log("Connection is open!");
-      dc.onmessage = (e) => {
-        console.log("Received a message: " + e.data);
-      };
-      setPeers(
-        peers.filter((peer) =>
-          peer.userId !== peers[i].userId ? peer : { ...peers[i], dc: dc }
-        )
-      );
-    };
-  }
+    dc.onopen = (e) => console.log("Connection is open!");
+    dc.onmessage = (e) => console.log("Received message: ", e.data);
+
+    pc.createOffer()
+      .then((offer) => pc.setLocalDescription(offer))
+      .then(() => console.log("Offer created & set as local description."));
+
+    setPeers([...peers, { userId: user.id, pc, dc }]);
+  };
 
   React.useEffect(() => {
     if (socket || !username) return;
@@ -161,56 +132,96 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     setSocket(connection);
 
     connection.onmessage = (e) => {
-      const { type, data } = JSON.parse(e.data);
+      var { type, data } = JSON.parse(e.data);
 
       switch (type) {
         case "candidate":
           if (data.description.type === "offer") {
-            for (let i = 0; i < peers.length; i++) {
-              if (peers[i].userId === data.from) {
-                return;
-              }
-            }
-            console.log("Received an Offer");
+            console.log("Received an offer!");
+            console.log(peers);
+            var pc = new RTCPeerConnection();
 
-            let rtc = new RTCPeerConnection();
-            let peer = {
-              userId: data.from,
-              rtc: rtc,
-              dc: rtc.createDataChannel(data.from),
+            pc.ondatachannel = (e) => {
+              let dc = e.channel;
+
+              dc.onopen = () => console.log("Connection is open!");
+              dc.onmessage = (e) =>
+                console.log("Received a message: " + e.data);
+
+              setPeers(
+                peers.filter((peer) =>
+                  peer.userId !== data.from
+                    ? peer
+                    : { userId: data.from, pc: pc, dc: dc }
+                )
+              );
             };
 
-            peer.rtc
-              .setRemoteDescription(data.description)
-              .then(() => console.log("Offer set"));
-            peer.rtc
-              .createAnswer()
-              .then((answer) => peer?.rtc.setLocalDescription(answer))
-              .then(() => console.log("Answer created"));
+            pc.addEventListener("icecandidate", (e) => {
+              // data.from is being lost but is necessary
+              console.log("New ice candidate!");
 
-            setPeers([...peers, peer]);
-            break;
+              var from = new String(data.from);
+              console.log("From = ", from);
+
+              console.log(
+                JSON.stringify({
+                  type: "candidate",
+                  data: {
+                    from: me?.id,
+                    to: from,
+                    description: pc.localDescription,
+                    socket: true,
+                  },
+                })
+              );
+
+              connection?.send(
+                JSON.stringify({
+                  type: "candidate",
+                  data: {
+                    from: me?.id,
+                    to: from,
+                    description: pc.localDescription,
+                    socket: true,
+                  },
+                })
+              );
+            });
+
+            setPeers([...peers, { userId: data.from, pc }]);
+
+            pc.setRemoteDescription(data.description).then(() =>
+              console.log("Offer set!")
+            );
+            pc.createAnswer()
+              .then((answer) => pc.setLocalDescription(answer))
+              .then(() => console.log("Answer created!"));
           } else if (data.description.type === "answer") {
-            console.log("Received an Answer");
+            console.log("Received an answer!");
+            console.log("From = ", data.from);
             for (let i = 0; i < peers.length; i++) {
               if (peers[i].userId === data.from) {
-                peers[i].rtc.setRemoteDescription(data.description);
+                peers[i].pc.setRemoteDescription(data.description);
+                console.log("Answer has been set!");
               }
             }
           }
           break;
         case "setMe":
+          // data: User
           setMe(data);
           break;
         case "addUser":
+          // data: User
           addUser(data);
           break;
         case "removeUser":
-          // data = userId
+          // data: userId
           removeUser(data);
-          setPeers(peers.filter((peer) => peer.userId !== data));
           break;
         case "setUsers":
+          // data: User[]
           setUsers(data);
           break;
         default:
@@ -240,7 +251,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
       </header>
 
       <main className="w-full border border-base-300 flex flex-col items-center p-2">
-        <h1>A peer to peer ChatData application.</h1>
+        <h1>A peer to peer chat app application.</h1>
       </main>
       <div className="grow w-full max-w-screen-md flex flex-row">
         {/* sidebar */}
@@ -266,7 +277,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
                   <div
                     key={user.id}
                     className="cursor-pointer"
-                    onClick={() => handlePeerConnection(user)}
+                    onClick={() => openChat(user)}
                   >
                     <img
                       className="rounded w-12 h-12"
@@ -280,11 +291,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
         </div>
         {/* ChatData area */}
         <div className="grow flex flex-col items-center justify-center border-r border-base-300">
-          {chat ? (
-            <ChatView data={chat} />
-          ) : (
-            <span>Click on a user to ChatData with them</span>
-          )}
+          {chat ? <ChatView /> : <span>Click on a user to open a chat</span>}
         </div>
       </div>
     </div>
