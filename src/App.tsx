@@ -6,6 +6,17 @@ interface User {
   username: string;
 }
 
+interface ChatData {
+  user: User;
+  dataChannel?: RTCDataChannel;
+}
+
+interface Peer {
+  userId: string;
+  rtc: RTCPeerConnection;
+  dc: RTCDataChannel;
+}
+
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
 
 interface LoginViewProps {
@@ -35,25 +46,44 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   );
 };
 
+interface ChatViewProps {
+  data: ChatData;
+}
+
+const ChatView: React.FC<ChatViewProps> = ({ data }) => {
+  const [message, setMessage] = React.useState("");
+
+  const sendMessage = () => {
+    data.dataChannel?.send(message);
+    setMessage("");
+  };
+
+  return (
+    <div>
+      <span>ChatData is open</span>
+      <input
+        value={message}
+        onChange={(e) => setMessage(e.currentTarget.value)}
+        className="input input-bordered"
+      />
+      <button className="btn" onClick={() => sendMessage()}>
+        Send
+      </button>
+    </div>
+  );
+};
+
 interface MainViewProps {
   username: string;
 }
 
 const MainView: React.FC<MainViewProps> = ({ username }) => {
-  const [chatId, setChatId] = React.useState<string | null>(null); // userId
-  const [chats, setChats] = React.useState<string[]>([]); // userIds
-  const [message, setMessage] = React.useState("");
-  
-  const [socket, setSocket] = React.useState<WebSocket | undefined>();
+  const [socket, setSocket] = React.useState<WebSocket | null>(null);
+  const [peers, setPeers] = React.useState<Peer[]>([]);
+
   const [me, setMe] = React.useState<User | null>(null);
   const [users, setUsers] = React.useState<User[]>([]);
-
-  const [peerConnection, setPeerConnection] = React.useState(
-    new RTCPeerConnection()
-  );
-  const [dataChannel, setDataChannel] = React.useState<RTCDataChannel | null>(
-    null
-  );
+  const [chat, setChat] = React.useState<ChatData | null>(null);
 
   const addUser = (user: User) => {
     setUsers([...users, user]);
@@ -63,6 +93,67 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     setUsers(users.filter((user) => user.id !== userId));
   };
 
+  const handlePeerConnection = (user: User) => {
+    // check if peer connection exists with this user
+    for (let i = 0; i < peers.length; i++) {
+      if (peers[i].userId === user.id) {
+        return;
+      }
+    }
+
+    let rtc = new RTCPeerConnection();
+    let peer = {
+      userId: user.id,
+      rtc: rtc,
+      dc: rtc.createDataChannel(user.id),
+    };
+    setPeers([...peers, peer]);
+    console.log("Created a new peer connection.");
+
+    // create an offer
+    peer.rtc
+      .createOffer()
+      .then((offer) => peer?.rtc.setLocalDescription(offer))
+      .then(() => console.log("Offer created & set as local description."));
+
+    setChat({ user, dataChannel: peer.dc });
+    console.log("Created a new data channel");
+    return;
+  };
+
+  for (let i = 0; i < peers.length; i++) {
+    peers[i].rtc.onicecandidate = (e) => {
+      console.log("New ice candidate");
+
+      socket?.send(
+        JSON.stringify({
+          type: "candidate",
+          data: {
+            to: peers[i].userId,
+            from: me?.id,
+            description: peers[i].rtc.localDescription,
+          },
+        })
+      );
+    };
+
+    peers[i].dc.onopen = () => console.log("Connection is open!");
+    peers[i].dc.onmessage = (e) => console.log("Received a message: " + e.data);
+
+    peers[i].rtc.ondatachannel = (e) => {
+      let dc = e.channel;
+      dc.onopen = () => console.log("Connection is open!");
+      dc.onmessage = (e) => {
+        console.log("Received a message: " + e.data);
+      };
+      setPeers(
+        peers.filter((peer) =>
+          peer.userId !== peers[i].userId ? peer : { ...peers[i], dc: dc }
+        )
+      );
+    };
+  }
+
   React.useEffect(() => {
     if (socket || !username) return;
 
@@ -71,20 +162,41 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
 
     connection.onmessage = (e) => {
       const { type, data } = JSON.parse(e.data);
+
       switch (type) {
         case "candidate":
           if (data.description.type === "offer") {
-            peerConnection
+            for (let i = 0; i < peers.length; i++) {
+              if (peers[i].userId === data.from) {
+                return;
+              }
+            }
+            console.log("Received an Offer");
+
+            let rtc = new RTCPeerConnection();
+            let peer = {
+              userId: data.from,
+              rtc: rtc,
+              dc: rtc.createDataChannel(data.from),
+            };
+
+            peer.rtc
               .setRemoteDescription(data.description)
-              .then(() => console.log("Offer set!"));
-            peerConnection
+              .then(() => console.log("Offer set"));
+            peer.rtc
               .createAnswer()
-              .then((answer) => peerConnection.setLocalDescription(answer))
-              .then(() => console.log("Answer created!"));
-            setChats([...chats, data.from]);
+              .then((answer) => peer?.rtc.setLocalDescription(answer))
+              .then(() => console.log("Answer created"));
+
+            setPeers([...peers, peer]);
+            break;
           } else if (data.description.type === "answer") {
-            console.log("answer received");
-            peerConnection.setRemoteDescription(data.description);
+            console.log("Received an Answer");
+            for (let i = 0; i < peers.length; i++) {
+              if (peers[i].userId === data.from) {
+                peers[i].rtc.setRemoteDescription(data.description);
+              }
+            }
           }
           break;
         case "setMe":
@@ -94,7 +206,9 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
           addUser(data);
           break;
         case "removeUser":
+          // data = userId
           removeUser(data);
+          setPeers(peers.filter((peer) => peer.userId !== data));
           break;
         case "setUsers":
           setUsers(data);
@@ -106,59 +220,6 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
 
     return () => connection?.close();
   }, [username]);
-
-  peerConnection.onicecandidate = () => {
-    console.log("New ice candidate");
-
-    socket?.send(
-      JSON.stringify({
-        type: "candidate",
-        data: {
-          from: me?.id,
-          to:
-            peerConnection.localDescription?.type === "offer"
-              ? chatId
-              : chats[chats.length - 1],
-          description: peerConnection.localDescription,
-        },
-      })
-    );
-  };
-
-  // handle new data channel
-  peerConnection.ondatachannel = (e) => {
-    let dataChannel = e.channel;
-    dataChannel.onopen = () => console.log("Connection is open!");
-    dataChannel.onmessage = (e) => {
-      console.log(e);
-      console.log("Received a message: " + e.data);
-    };
-    setDataChannel(dataChannel);
-  };
-
-  const createDataChannel = (chatId: string) => {
-    let dc = peerConnection.createDataChannel(chatId);
-
-    dc.onopen = () => console.log("Connection is open!");
-    dc.onmessage = (e) => console.log("Received a message: " + e.data);
-
-    peerConnection
-      .createOffer()
-      .then((offer) => peerConnection.setLocalDescription(offer))
-      .then(() => console.log("Offer created & set as local description."));
-
-    setDataChannel(dc);
-  };
-
-  const openChat = (userId: string) => {
-    setChatId(userId);
-    createDataChannel(userId);
-  };
-
-  const sendMessage = () => {
-    dataChannel?.send(message);
-    setMessage("");
-  };
 
   if (!me) return null;
 
@@ -179,7 +240,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
       </header>
 
       <main className="w-full border border-base-300 flex flex-col items-center p-2">
-        <h1>A peer to peer chat application.</h1>
+        <h1>A peer to peer ChatData application.</h1>
       </main>
       <div className="grow w-full max-w-screen-md flex flex-row">
         {/* sidebar */}
@@ -205,7 +266,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
                   <div
                     key={user.id}
                     className="cursor-pointer"
-                    onClick={() => openChat(user.id)}
+                    onClick={() => handlePeerConnection(user)}
                   >
                     <img
                       className="rounded w-12 h-12"
@@ -217,20 +278,12 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
             </div>
           </div>
         </div>
-        {/* chat area */}
+        {/* ChatData area */}
         <div className="grow flex flex-col items-center justify-center border-r border-base-300">
-          {chatId && (
-            <div>
-              <span>chatting with {chatId}</span>
-              <input
-                value={message}
-                onChange={(e) => setMessage(e.currentTarget.value)}
-                className="input input-bordered"
-              />
-              <button className="btn" onClick={() => sendMessage()}>
-                Send
-              </button>
-            </div>
+          {chat ? (
+            <ChatView data={chat} />
+          ) : (
+            <span>Click on a user to ChatData with them</span>
           )}
         </div>
       </div>
