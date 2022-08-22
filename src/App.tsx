@@ -29,13 +29,128 @@ const useStore = create<State>((set) => ({
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
 
 const App: React.FC = () => {
-  const [username, setUsername] = React.useState<String | null>(null);
+  const [username, setUsername] = React.useState<string | null>(null);
+  const [chatId, setChatId] = React.useState<string | null>(null); // userId
+  const [chats, setChats] = React.useState<string[]>([]); // userIds
+  const [socket, setSocket] = React.useState<WebSocket | undefined>();
+  const [message, setMessage] = React.useState("");
+
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
   const users = useStore((state) => state.users);
   const me = useStore((state) => state.me);
+  const setMe = useStore((state) => state.setMe);
+  const addUser = useStore((state) => state.addUser);
+  const removeUser = useStore((state) => state.removeUser);
+  const setUsers = useStore((state) => state.setUsers);
 
-  useSocketServer(username);
+  React.useEffect(() => {
+    if (socket || !username) return;
+
+    const connection = new WebSocket(WEBSOCKET_URL + username);
+    setSocket(connection);
+
+    connection.onmessage = (e) => {
+      const { type, data } = JSON.parse(e.data);
+      console.log(data);
+      switch (type) {
+        case "candidate":
+          if (data.description.type === "offer") {
+            peerConnection
+              .setRemoteDescription(data.description)
+              .then(() => console.log("Offer set!"));
+            peerConnection
+              .createAnswer()
+              .then((answer) => peerConnection.setLocalDescription(answer))
+              .then(() => console.log("Answer created!"));
+            setChats([...chats, data.from]);
+          } else if (data.description.type === "answer") {
+            console.log("answer received");
+            peerConnection.setRemoteDescription(data.description);
+          }
+          break;
+        case "setMe":
+          setMe(data);
+          break;
+        case "addUser":
+          addUser(data);
+          break;
+        case "removeUser":
+          removeUser(data);
+          break;
+        case "setUsers":
+          setUsers(data);
+          break;
+        default:
+          break;
+      }
+    };
+
+    return () => connection?.close();
+  }, [username]);
+
+  const [peerConnection, setPeerConnection] = React.useState(
+    new RTCPeerConnection()
+  );
+  const [dataChannel, setDataChannel] = React.useState<RTCDataChannel | null>(
+    null
+  );
+
+  peerConnection.onicecandidate = () => {
+    console.log("New ice candidate: ");
+    console.log(peerConnection.localDescription);
+
+    console.log(chats);
+
+    socket?.send(
+      JSON.stringify({
+        type: "candidate",
+        data: {
+          from: me.id,
+          to:
+            peerConnection.localDescription.type === "offer"
+              ? chatId
+              : chats[chats.length - 1],
+          description: peerConnection.localDescription,
+        },
+      })
+    );
+  };
+
+  // handle new data channel
+  peerConnection.ondatachannel = (e) => {
+    let dataChannel = e.channel;
+    dataChannel.onopen = () => console.log("Connection is open!");
+    dataChannel.onmessage = (e) => {
+      console.log(e);
+      console.log("Received a message: " + e.data);
+    };
+    setDataChannel(dataChannel);
+  };
+
+  const createDataChannel = (chatId: string) => {
+    let dc = peerConnection.createDataChannel(chatId);
+
+    dc.onopen = () => console.log("Connection is open!");
+    dc.onmessage = (e) => console.log("Received a message: " + e.data);
+
+    peerConnection
+      .createOffer()
+      .then((offer) => peerConnection.setLocalDescription(offer))
+      .then(() => console.log("Offer created & set as local description."));
+
+    setDataChannel(dc);
+  };
+
+  const openChat = (userId: string) => {
+    setChatId(userId);
+    createDataChannel(userId);
+  };
+
+  const sendMessage = () => {
+    dataChannel.send(message);
+    setMessage("");
+  };
 
   if (!username) {
     return (
@@ -103,7 +218,11 @@ const App: React.FC = () => {
               {users
                 .filter((user) => user.username !== me.username)
                 .map((user) => (
-                  <div key={user.id}>
+                  <div
+                    key={user.id}
+                    className="cursor-pointer"
+                    onClick={() => openChat(user.id)}
+                  >
                     <img
                       className="rounded w-12 h-12"
                       src={`https://ui-avatars.com/api/?name=${user.username}`}
@@ -116,130 +235,23 @@ const App: React.FC = () => {
         </div>
         {/* chat area */}
         <div className="grow flex flex-col items-center justify-center border-r border-base-300">
-          so empty..
+          {chatId && (
+            <div>
+              <span>chatting with {chatId}</span>
+              <input
+                value={message}
+                onChange={(e) => setMessage(e.currentTarget.value)}
+                className="input input-bordered"
+              />
+              <button className="btn" onClick={() => sendMessage()}>
+                Send
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
-
-const useSocketServer = (username: String | null) => {
-  const [socket, setSocket] = React.useState<WebSocket | undefined>();
-
-  const setMe = useStore((state) => state.setMe);
-  const addUser = useStore((state) => state.addUser);
-  const removeUser = useStore((state) => state.removeUser);
-  const setUsers = useStore((state) => state.setUsers);
-
-  React.useEffect(() => {
-    if (socket || !username) return;
-
-    const connection = new WebSocket(WEBSOCKET_URL + username);
-    setSocket(connection);
-
-    connection.onmessage = (e) => {
-      const { type, data } = JSON.parse(e.data);
-      switch (type) {
-        case "setMe":
-          setMe(data);
-          break;
-        case "addUser":
-          addUser(data);
-          break;
-        case "removeUser":
-          removeUser(data);
-          break;
-        case "setUsers":
-          setUsers(data);
-          break;
-        default:
-          break;
-      }
-    };
-
-    connection.onopen = (e) => {};
-
-    return () => connection?.close();
-  }, [username]);
-};
-
-// const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
-
-// const App: React.FC = () => {
-//   const [id, setId] = React.useState(Math.random().toString());
-//   const [socket, setSocket] = React.useState<WebSocket | undefined>();
-//   const [pc, setPc] = React.useState(new RTCPeerConnection());
-//   const [dc, setDc] = React.useState<RTCDataChannel>();
-
-//   const [message, setMessage] = React.useState("");
-
-//   React.useEffect(() => {
-//     if (socket) return;
-
-//     const connection = new WebSocket(WEBSOCKET_URL);
-
-//     connection.onmessage = (e) => {
-//       const { userId, data }: { userId: string; data: RTCSessionDescription } =
-//         JSON.parse(e.data);
-
-//       if (userId === id || (pc.remoteDescription && pc.localDescription))
-//         return;
-//       if (data.type === "offer") {
-//         pc.setRemoteDescription(data).then(() => console.log("Offer set!"));
-//         pc.createAnswer()
-//           .then((answer) => pc.setLocalDescription(answer))
-//           .then(() => console.log("Answer created!"));
-//       } else if (data.type === "answer") {
-//         pc.setRemoteDescription(data);
-//       }
-//     };
-
-//     setSocket(connection);
-//     return () => connection?.close();
-//   }, []);
-
-//   pc.onicecandidate = () => {
-//     console.log("New ice candidate: ");
-//     console.log(pc.localDescription);
-//     socket?.send(
-//       JSON.stringify({
-//         userId: id,
-//         data: pc.localDescription,
-//       })
-//     );
-//   };
-
-//   pc.ondatachannel = (e) => {
-//     let dataChannel = e.channel;
-//     dataChannel.onopen = () => console.log("Connection is open!");
-//     dataChannel.onmessage = (e) => console.log("Received a message: " + e.data);
-//     setDc(dataChannel);
-//   };
-
-//   const createDataChannel = () => {
-//     const dc = pc.createDataChannel("channel");
-//     dc.onopen = () => console.log("Connection is open!");
-//     dc.onmessage = (e) => console.log("Received a message: " + e.data);
-
-//     pc.createOffer()
-//       .then((offer) => pc.setLocalDescription(offer))
-//       .then(() => console.log("Offer created & set as local description."));
-
-//     setDc(dc);
-//   };
-
-//   return (
-//     <div className="">
-//       <h1>Loquor - A peer to peer web chat application</h1>
-//       <button onClick={() => createDataChannel()}>Create channel</button>
-//       <input
-//         className="input input-bordered"
-//         type="text"
-//         onChange={(e) => setMessage(e.currentTarget.value)}
-//       />
-//       <button onClick={() => dc?.send(message)}>Send message</button>
-//     </div>
-//   );
-// };
 
 export default App;

@@ -4,8 +4,8 @@
 
 - [x] Design a basic UI
 - [x] Implement said UI
-- [ ] Connect to the websocket server
-  - [ ] Display connected users
+- [x] Connect to the websocket server
+  - [x] Display connected users
 - [ ] Handle a single peer to peer connection
   - [ ] Handle chat
 - [ ] Handle multiple peer to peer connections
