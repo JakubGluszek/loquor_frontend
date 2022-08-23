@@ -1,6 +1,7 @@
 import React from "react";
 import toast from "react-hot-toast";
-import { MdKeyboardArrowRight } from "react-icons/md";
+import { MdKeyboardArrowRight, MdClose } from "react-icons/md";
+import cuid from "cuid";
 
 interface User {
   id: string;
@@ -28,8 +29,8 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <div className="h-screen w-screen flex items-center justify-center">
-      <div className="flex flex-col gap-4 border border-base-300 p-4">
+    <div className="min-h-screen w-screen flex items-center justify-center">
+      <div className="flex flex-col gap-4 border  p-4">
         <input
           placeholder="Username"
           ref={usernameRef}
@@ -49,93 +50,180 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
 
 interface ChatViewProps {
   socket: WebSocket;
-  user: User;
+  chat: Chat;
   me: User;
-  host: boolean;
+  setChat: (chat: Chat) => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ socket, user, me, host }) => {
+interface Message {
+  author: User;
+  body: string;
+}
+
+const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
+  const [messages, setMessages] = React.useState<Message[]>([]);
   const [message, setMessage] = React.useState("");
   const [pc, setPc] = React.useState(new RTCPeerConnection());
   const [dc, setDc] = React.useState<RTCDataChannel | null>(null);
 
-  pc.onicecandidate = () => {
-    console.log("New Ice Candidate");
-
-    socket.send(
-      JSON.stringify({
-        type: "ice",
-        data: {
-          from: me.id,
-          to: user.id,
-          description: pc.localDescription,
-        },
-      })
-    );
-  };
-
-  pc.ondatachannel = (e) => {
-    let dataChannel = e.channel;
-
-    dataChannel.onopen = () => console.log("Connection is open!");
-    dataChannel.onmessage = (e) => console.log("Message received: ", e.data);
-
-    setDc(dataChannel);
-  };
-
   const sendMessage = () => {
     dc?.send(message);
+    console.log(messages);
+    setMessages([...messages, { author: me, body: message }]);
     setMessage("");
   };
 
-  React.useEffect(() => {
-    if (host) {
-      const dc = pc.createDataChannel("channel");
-
-      dc.onopen = () => console.log("Connection is open!");
-      dc.onmessage = (e) => console.log("Received a message: " + e.data);
-
-      pc.createOffer()
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => console.log("Offer created & set as local description."));
-
-      setDc(dc);
+  pc.oniceconnectionstatechange = function () {
+    if (pc.iceConnectionState == "disconnected") {
+      setChat({ host: false, user: null, open: false, status: null });
     }
+  };
+
+  const handleExit = () => {
+    pc.close();
+    setChat({ ...chat, open: false, user: null });
+  };
+
+  React.useEffect(() => {
+    var dataChannel;
+
+    const handleMessages = (e: MessageEvent) => {
+      console.log(messages);
+      setMessages([...messages, { author: chat.user!, body: e.data }]);
+    };
+
+    if (chat.host) {
+      dataChannel = pc.createDataChannel("channel");
+
+      dataChannel.addEventListener("message", (e) => handleMessages(e));
+
+      setDc(dataChannel);
+    } else {
+      pc.ondatachannel = (e) => {
+        dataChannel = e.channel;
+
+        dataChannel.addEventListener("message", (e) => handleMessages(e));
+
+        setDc(dataChannel);
+      };
+    }
+  }, [messages]);
+
+  React.useEffect(() => {
+    if (!chat.host) return;
+
+    pc.createOffer()
+      .then((offer) => pc.setLocalDescription(offer))
+      .then(() => console.log("Offer created & set as local description."))
+      .then(() =>
+        socket.send(
+          JSON.stringify({
+            type: "ice",
+            data: {
+              from: me.id,
+              to: chat.user!.id,
+              description: pc.localDescription,
+            },
+          })
+        )
+      )
+      .catch((error) => console.log("Error while creating offer", error));
   }, []);
 
   React.useEffect(() => {
-    socket.addEventListener("message", (e) => {
+    const handleEvents = async (e: MessageEvent) => {
       var { type, data } = JSON.parse(e.data);
       switch (type) {
         case "ice":
           if (data.description.type === "offer") {
-            pc.setRemoteDescription(data.description).then(() =>
-              console.log("Offer set!")
-            );
-            pc.createAnswer()
+            await pc
+              .setRemoteDescription(data.description)
+              .then(() => console.log("Offer set!"))
+              .catch((error) =>
+                console.log("Caught an error while setting: offer", error)
+              );
+            await pc
+              .createAnswer()
               .then((answer) => pc.setLocalDescription(answer))
-              .then(() => console.log("Answer created!"));
+              .then(() =>
+                socket.send(
+                  JSON.stringify({
+                    type: "ice",
+                    data: {
+                      from: me.id,
+                      to: data.from,
+                      description: pc.localDescription,
+                    },
+                  })
+                )
+              )
+              .then(() => console.log("Answer created!"))
+              .catch((error) =>
+                console.log("Caught an error while creating an answer", error)
+              );
           } else if (data.description.type === "answer") {
-            pc.setRemoteDescription(data.description);
+            await pc
+              .setRemoteDescription(data.description)
+              .then(() => console.log("Answer set as remote description"))
+              .then(() =>
+                socket.send(
+                  JSON.stringify({
+                    type: "ice",
+                    data: {
+                      from: me.id,
+                      to: data.from,
+                      description: pc.localDescription,
+                    },
+                  })
+                )
+              )
+              .catch((error) =>
+                console.log("Caught an error while setting: answer", error)
+              );
           }
           break;
         default:
           break;
       }
-    });
+    };
+
+    socket.addEventListener("message", (e) => handleEvents(e));
+    return () => socket.removeEventListener("message", handleEvents);
   }, []);
 
   return (
-    <div>
-      <input
-        value={message}
-        onChange={(e) => setMessage(e.currentTarget.value)}
-        className="input input-bordered"
-      />
-      <button className="btn" onClick={() => sendMessage()}>
-        Send
-      </button>
-    </div>
+    <>
+      <div className="h-8 flex flex-row items-center gap-2 p-2 border-b ">
+        <span className="grow">Chatting with {chat.user?.username}</span>
+        <MdClose size={24} onClick={() => handleExit()} />
+      </div>
+      <div className="relative grow flex flex-col">
+        <div className="grow flex flex-col gap-2 p-2">
+          {messages.map((message) => (
+            <div key={cuid()} className="flex flex-col border">
+              <div
+                className={`flex flex-col gap-0.5 ${
+                  message.author.id === me.id ? "items-end" : ""
+                }`}
+              >
+                <p className="font-semibold">{message.author.username}</p>
+                <p>{message.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="absolute bottom-0 w-full flex flex-row gap-2 p-2 border-y">
+          <input
+            className="grow input input-bordered"
+            value={message}
+            onChange={(e) => setMessage(e.currentTarget.value)}
+          />
+          <button className="btn" onClick={() => sendMessage()}>
+            Send
+          </button>
+        </div>
+      </div>
+    </>
   );
 };
 
@@ -169,6 +257,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
   const handleChatAccept = () => {
     if (!chatOffer.from) return;
 
+    setChat({ open: true, user: chatOffer.from, status: null, host: false });
     socket?.send(
       JSON.stringify({
         type: "chatOfferRes",
@@ -179,8 +268,6 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
         },
       })
     );
-
-    setChat({ open: true, user: chatOffer.from, status: null, host: false });
     setChatOffer({ from: null });
   };
 
@@ -266,7 +353,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
   if (!me) return null;
 
   return (
-    <div className="mx-auto min-h-screen max-w-screen-md flex flex-col items-center">
+    <div className="mx-auto h-screen max-w-screen-md flex flex-col items-center">
       <header className="navbar h-16">
         <div className="navbar-start"></div>
         <div className="navbar-center">
@@ -281,7 +368,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
         </div>
       </header>
 
-      <main className="w-full border border-base-300 flex flex-col items-center p-2">
+      <main className="w-full border flex flex-col items-center p-2">
         <h1>A peer to peer chat app application.</h1>
         {chatOffer.from && (
           <div className="flex flex-row items-center gap-2">
@@ -297,16 +384,16 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
       </main>
       <div className="grow w-full max-w-screen-md flex flex-row">
         {/* sidebar */}
-        <div className="grow max-w-[80px] flex flex-col gap-1 border-x border-base-300">
+        <div className="grow max-w-[80px] flex flex-col gap-1 border-x">
           {/* view more */}
           <div
-            className="flex flex-row gap-1 items-center justify-center cursor-pointer tooltip"
+            className="h-8 flex flex-row gap-1 items-center justify-center cursor-pointer tooltip border-b"
             data-tip="Show more"
           >
             <MdKeyboardArrowRight size={32} />
           </div>
           {/* users */}
-          <div className="flex flex-col border-t border-base-300">
+          <div className="flex flex-col">
             {/* all */}
             <div className="flex flex-col items-center gap-2 py-2">
               {users
@@ -328,14 +415,9 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
           </div>
         </div>
         {/* Chat area */}
-        <div className="grow flex flex-col border-r border-base-300">
+        <div className="grow flex flex-col border-r">
           {chat.open && chat.user && socket ? (
-            <ChatView
-              socket={socket}
-              user={chat.user}
-              me={me}
-              host={chat.host}
-            />
+            <ChatView socket={socket} chat={chat} me={me} setChat={setChat} />
           ) : (
             <div className="grow flex flex-col items-center justify-center">
               {chat.status === "pending" ? (
