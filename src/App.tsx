@@ -1,4 +1,5 @@
 import React from "react";
+import toast from "react-hot-toast";
 import { MdKeyboardArrowRight } from "react-icons/md";
 
 interface User {
@@ -6,10 +7,15 @@ interface User {
   username: string;
 }
 
-interface Peer {
-  userId: string;
-  pc: RTCPeerConnection;
-  dc?: RTCDataChannel;
+interface Chat {
+  user: User | null;
+  open: boolean;
+  status: "pending" | null;
+  host: boolean;
+}
+
+interface ChatOffer {
+  from: User | null;
 }
 
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
@@ -41,14 +47,83 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   );
 };
 
-interface ChatViewProps {}
+interface ChatViewProps {
+  socket: WebSocket;
+  user: User;
+  me: User;
+  host: boolean;
+}
 
-const ChatView: React.FC<ChatViewProps> = ({}) => {
+const ChatView: React.FC<ChatViewProps> = ({ socket, user, me, host }) => {
   const [message, setMessage] = React.useState("");
+  const [pc, setPc] = React.useState(new RTCPeerConnection());
+  const [dc, setDc] = React.useState<RTCDataChannel | null>(null);
+
+  pc.onicecandidate = () => {
+    console.log("New Ice Candidate");
+
+    socket.send(
+      JSON.stringify({
+        type: "ice",
+        data: {
+          from: me.id,
+          to: user.id,
+          description: pc.localDescription,
+        },
+      })
+    );
+  };
+
+  pc.ondatachannel = (e) => {
+    let dataChannel = e.channel;
+
+    dataChannel.onopen = () => console.log("Connection is open!");
+    dataChannel.onmessage = (e) => console.log("Message received: ", e.data);
+
+    setDc(dataChannel);
+  };
 
   const sendMessage = () => {
+    dc?.send(message);
     setMessage("");
   };
+
+  React.useEffect(() => {
+    if (host) {
+      const dc = pc.createDataChannel("channel");
+
+      dc.onopen = () => console.log("Connection is open!");
+      dc.onmessage = (e) => console.log("Received a message: " + e.data);
+
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .then(() => console.log("Offer created & set as local description."));
+
+      setDc(dc);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    socket.addEventListener("message", (e) => {
+      var { type, data } = JSON.parse(e.data);
+      switch (type) {
+        case "ice":
+          if (data.description.type === "offer") {
+            pc.setRemoteDescription(data.description).then(() =>
+              console.log("Offer set!")
+            );
+            pc.createAnswer()
+              .then((answer) => pc.setLocalDescription(answer))
+              .then(() => console.log("Answer created!"));
+          } else if (data.description.type === "answer") {
+            pc.setRemoteDescription(data.description);
+          }
+          break;
+        default:
+          break;
+      }
+    });
+  }, []);
 
   return (
     <div>
@@ -70,8 +145,15 @@ interface MainViewProps {
 
 const MainView: React.FC<MainViewProps> = ({ username }) => {
   const [socket, setSocket] = React.useState<WebSocket | null>(null);
-  const [peers, setPeers] = React.useState<Peer[]>([]);
-  const [chat, setChat] = React.useState<string | null>(null); // userId
+  const [chat, setChat] = React.useState<Chat>({
+    user: null,
+    open: false,
+    status: null,
+    host: false,
+  });
+  const [chatOffer, setChatOffer] = React.useState<ChatOffer>({
+    from: null,
+  });
 
   const [me, setMe] = React.useState<User | null>(null);
   const [users, setUsers] = React.useState<User[]>([]);
@@ -84,45 +166,51 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     setUsers(users.filter((user) => user.id !== userId));
   };
 
-  const openChat = (user: User) => {
-    let pc = new RTCPeerConnection();
+  const handleChatAccept = () => {
+    if (!chatOffer.from) return;
 
-    pc.ondatachannel = (e) => {
-      let dc = e.channel;
-      dc.onopen = () => console.log("Connection is open!");
-      dc.onmessage = (e) => console.log("Received a message: " + e.data);
-      setPeers(
-        peers.filter((peer) =>
-          peer.userId !== user.id ? peer : { userId: user.id, pc: pc, dc: dc }
-        )
-      );
-    };
+    socket?.send(
+      JSON.stringify({
+        type: "chatOfferRes",
+        data: {
+          from: me,
+          to: chatOffer.from.id,
+          res: true,
+        },
+      })
+    );
 
-    pc.addEventListener("icecandidate", (e) => {
-      console.log("New ice candidate");
-      socket?.send(
-        JSON.stringify({
-          type: "candidate",
-          data: {
-            from: me?.id,
-            to: user.id,
-            description: pc.localDescription,
-            socket: false,
-          },
-        })
-      );
-    });
+    setChat({ open: true, user: chatOffer.from, status: null, host: false });
+    setChatOffer({ from: null });
+  };
 
-    let dc = pc.createDataChannel(user.id);
+  const handleChatReject = () => {
+    if (!chatOffer.from) return;
+    socket?.send(
+      JSON.stringify({
+        type: "chatOfferRes",
+        data: {
+          from: me,
+          to: chatOffer.from.id,
+          res: false,
+        },
+      })
+    );
 
-    dc.onopen = (e) => console.log("Connection is open!");
-    dc.onmessage = (e) => console.log("Received message: ", e.data);
+    setChatOffer({ from: null });
+  };
 
-    pc.createOffer()
-      .then((offer) => pc.setLocalDescription(offer))
-      .then(() => console.log("Offer created & set as local description."));
-
-    setPeers([...peers, { userId: user.id, pc, dc }]);
+  const sendChatOffer = (user: User) => {
+    socket?.send(
+      JSON.stringify({
+        type: "chatOffer",
+        data: {
+          from: me,
+          to: user.id,
+        },
+      })
+    );
+    setChat({ open: false, user: user, status: "pending", host: true });
   };
 
   React.useEffect(() => {
@@ -131,83 +219,9 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     const connection = new WebSocket(WEBSOCKET_URL + username);
     setSocket(connection);
 
-    connection.onmessage = (e) => {
+    connection.addEventListener("message", (e) => {
       var { type, data } = JSON.parse(e.data);
-
       switch (type) {
-        case "candidate":
-          if (data.description.type === "offer") {
-            console.log("Received an offer!");
-            console.log(peers);
-            var pc = new RTCPeerConnection();
-
-            pc.ondatachannel = (e) => {
-              let dc = e.channel;
-
-              dc.onopen = () => console.log("Connection is open!");
-              dc.onmessage = (e) =>
-                console.log("Received a message: " + e.data);
-
-              setPeers(
-                peers.filter((peer) =>
-                  peer.userId !== data.from
-                    ? peer
-                    : { userId: data.from, pc: pc, dc: dc }
-                )
-              );
-            };
-
-            pc.addEventListener("icecandidate", (e) => {
-              // data.from is being lost but is necessary
-              console.log("New ice candidate!");
-
-              var from = new String(data.from);
-              console.log("From = ", from);
-
-              console.log(
-                JSON.stringify({
-                  type: "candidate",
-                  data: {
-                    from: me?.id,
-                    to: from,
-                    description: pc.localDescription,
-                    socket: true,
-                  },
-                })
-              );
-
-              connection?.send(
-                JSON.stringify({
-                  type: "candidate",
-                  data: {
-                    from: me?.id,
-                    to: from,
-                    description: pc.localDescription,
-                    socket: true,
-                  },
-                })
-              );
-            });
-
-            setPeers([...peers, { userId: data.from, pc }]);
-
-            pc.setRemoteDescription(data.description).then(() =>
-              console.log("Offer set!")
-            );
-            pc.createAnswer()
-              .then((answer) => pc.setLocalDescription(answer))
-              .then(() => console.log("Answer created!"));
-          } else if (data.description.type === "answer") {
-            console.log("Received an answer!");
-            console.log("From = ", data.from);
-            for (let i = 0; i < peers.length; i++) {
-              if (peers[i].userId === data.from) {
-                peers[i].pc.setRemoteDescription(data.description);
-                console.log("Answer has been set!");
-              }
-            }
-          }
-          break;
         case "setMe":
           // data: User
           setMe(data);
@@ -224,10 +238,27 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
           // data: User[]
           setUsers(data);
           break;
+        case "chatOffer":
+          // data: {from, to}
+          setChatOffer({ from: data.from });
+          toast("New chat offer");
+          break;
+        case "chatOfferRes":
+          // data: {from: User, to, res: boolean}
+          if (data.res === false) {
+            toast.error(`${data.from.username} rejected your chat offer`);
+            setChat({ open: chat.open, status: null, user: null, host: false });
+          }
+
+          if (data.res === true) {
+            toast.success(`${data.from.username} accepted your chat offer`);
+            setChat({ user: data.from, open: true, status: null, host: true });
+          }
+          break;
         default:
           break;
       }
-    };
+    });
 
     return () => connection?.close();
   }, [username]);
@@ -252,6 +283,17 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
 
       <main className="w-full border border-base-300 flex flex-col items-center p-2">
         <h1>A peer to peer chat app application.</h1>
+        {chatOffer.from && (
+          <div className="flex flex-row items-center gap-2">
+            <span>{chatOffer.from.username} wants to chat - </span>
+            <button className="btn" onClick={() => handleChatAccept()}>
+              Accept
+            </button>
+            <button className="btn" onClick={() => handleChatReject()}>
+              Reject
+            </button>
+          </div>
+        )}
       </main>
       <div className="grow w-full max-w-screen-md flex flex-row">
         {/* sidebar */}
@@ -265,10 +307,6 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
           </div>
           {/* users */}
           <div className="flex flex-col border-t border-base-300">
-            {/* favorites */}
-            <div className="flex flex-col items-center gap-2 py-2 border-b border-base-300">
-              fav
-            </div>
             {/* all */}
             <div className="flex flex-col items-center gap-2 py-2">
               {users
@@ -277,7 +315,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
                   <div
                     key={user.id}
                     className="cursor-pointer"
-                    onClick={() => openChat(user)}
+                    onClick={() => sendChatOffer(user)}
                   >
                     <img
                       className="rounded w-12 h-12"
@@ -289,9 +327,24 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
             </div>
           </div>
         </div>
-        {/* ChatData area */}
-        <div className="grow flex flex-col items-center justify-center border-r border-base-300">
-          {chat ? <ChatView /> : <span>Click on a user to open a chat</span>}
+        {/* Chat area */}
+        <div className="grow flex flex-col border-r border-base-300">
+          {chat.open && chat.user && socket ? (
+            <ChatView
+              socket={socket}
+              user={chat.user}
+              me={me}
+              host={chat.host}
+            />
+          ) : (
+            <div className="grow flex flex-col items-center justify-center">
+              {chat.status === "pending" ? (
+                <span>Chat offer sent, please wait patiently</span>
+              ) : (
+                <span>Click on a user to request a chatting session</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
