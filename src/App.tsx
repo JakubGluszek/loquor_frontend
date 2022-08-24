@@ -68,7 +68,6 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
 
   const sendMessage = () => {
     dc?.send(message);
-    console.log(messages);
     setMessages([...messages, { author: me, body: message }]);
     setMessage("");
   };
@@ -77,6 +76,19 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
     if (pc.iceConnectionState == "disconnected") {
       setChat({ host: false, user: null, open: false, status: null });
     }
+  };
+
+  pc.onicecandidate = (e) => {
+    socket.send(
+      JSON.stringify({
+        type: "ice-candidate",
+        data: {
+          from: me.id,
+          to: chat.user?.id,
+          candidate: e.candidate,
+        },
+      })
+    );
   };
 
   const handleExit = () => {
@@ -88,12 +100,11 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
     var dataChannel;
 
     const handleMessages = (e: MessageEvent) => {
-      console.log(messages);
       setMessages([...messages, { author: chat.user!, body: e.data }]);
     };
 
     if (chat.host) {
-      dataChannel = pc.createDataChannel("channel");
+      dataChannel = pc.createDataChannel("chat");
 
       dataChannel.addEventListener("message", (e) => handleMessages(e));
 
@@ -114,11 +125,10 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
 
     pc.createOffer()
       .then((offer) => pc.setLocalDescription(offer))
-      .then(() => console.log("Offer created & set as local description."))
       .then(() =>
         socket.send(
           JSON.stringify({
-            type: "ice",
+            type: "offer",
             data: {
               from: me.id,
               to: chat.user!.id,
@@ -127,60 +137,64 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
           })
         )
       )
+      .then(() => console.log("Offer created & set as local description."))
       .catch((error) => console.log("Error while creating offer", error));
   }, []);
 
   React.useEffect(() => {
     const handleEvents = async (e: MessageEvent) => {
       var { type, data } = JSON.parse(e.data);
+
       switch (type) {
-        case "ice":
-          if (data.description.type === "offer") {
-            await pc
-              .setRemoteDescription(data.description)
-              .then(() => console.log("Offer set!"))
-              .catch((error) =>
-                console.log("Caught an error while setting: offer", error)
-              );
-            await pc
-              .createAnswer()
-              .then((answer) => pc.setLocalDescription(answer))
-              .then(() =>
-                socket.send(
-                  JSON.stringify({
-                    type: "ice",
-                    data: {
-                      from: me.id,
-                      to: data.from,
-                      description: pc.localDescription,
-                    },
-                  })
-                )
+        case "ice-candidate":
+          pc.addIceCandidate(data.candidate);
+          break;
+        case "offer":
+          await pc
+            .setRemoteDescription(new RTCSessionDescription(data.description))
+            .then(() => console.log("Offer set!"))
+            .catch((error) =>
+              console.log("Caught an error while setting: offer", error)
+            );
+          await pc
+            .createAnswer()
+            .then((answer) => pc.setLocalDescription(answer))
+            .then(() =>
+              socket.send(
+                JSON.stringify({
+                  type: "answer",
+                  data: {
+                    from: me.id,
+                    to: data.from,
+                    description: pc.localDescription,
+                  },
+                })
               )
-              .then(() => console.log("Answer created!"))
-              .catch((error) =>
-                console.log("Caught an error while creating an answer", error)
-              );
-          } else if (data.description.type === "answer") {
-            await pc
-              .setRemoteDescription(data.description)
-              .then(() => console.log("Answer set as remote description"))
-              .then(() =>
-                socket.send(
-                  JSON.stringify({
-                    type: "ice",
-                    data: {
-                      from: me.id,
-                      to: data.from,
-                      description: pc.localDescription,
-                    },
-                  })
-                )
-              )
-              .catch((error) =>
-                console.log("Caught an error while setting: answer", error)
-              );
-          }
+            )
+            .then(() => console.log("Answer created!"))
+            .catch((error) =>
+              console.log("Caught an error while creating an answer", error)
+            );
+          break;
+        case "answer":
+          await pc
+            .setRemoteDescription(new RTCSessionDescription(data.description))
+            // .then(() =>
+            //   socket.send(
+            //     JSON.stringify({
+            //       type: "answer",
+            //       data: {
+            //         from: me.id,
+            //         to: data.from,
+            //         description: pc.localDescription,
+            //       },
+            //     })
+            //   )
+            // )
+            .then(() => console.log("Answer set as remote description"))
+            .catch((error) =>
+              console.log("Caught an error while setting: answer", error)
+            );
           break;
         default:
           break;
@@ -260,7 +274,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     setChat({ open: true, user: chatOffer.from, status: null, host: false });
     socket?.send(
       JSON.stringify({
-        type: "chatOfferRes",
+        type: "chatInviteRes",
         data: {
           from: me,
           to: chatOffer.from.id,
@@ -275,7 +289,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
     if (!chatOffer.from) return;
     socket?.send(
       JSON.stringify({
-        type: "chatOfferRes",
+        type: "chatInviteRes",
         data: {
           from: me,
           to: chatOffer.from.id,
@@ -290,7 +304,7 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
   const sendChatOffer = (user: User) => {
     socket?.send(
       JSON.stringify({
-        type: "chatOffer",
+        type: "chatInvite",
         data: {
           from: me,
           to: user.id,
@@ -325,12 +339,12 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
           // data: User[]
           setUsers(data);
           break;
-        case "chatOffer":
+        case "chatInvite":
           // data: {from, to}
           setChatOffer({ from: data.from });
           toast("New chat offer");
           break;
-        case "chatOfferRes":
+        case "chatInviteRes":
           // data: {from: User, to, res: boolean}
           if (data.res === false) {
             toast.error(`${data.from.username} rejected your chat offer`);
