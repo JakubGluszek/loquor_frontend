@@ -3,23 +3,71 @@ import toast from "react-hot-toast";
 import { MdKeyboardArrowRight, MdClose } from "react-icons/md";
 import cuid from "cuid";
 
+const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
+
 interface User {
   id: string;
   username: string;
 }
 
-interface Chat {
-  user: User | null;
-  open: boolean;
-  status: "pending" | null;
-  host: boolean;
+interface ChatInvite {
+  user: User;
 }
 
-interface ChatOffer {
-  from: User | null;
+interface Message {
+  author: User;
+  body: string;
 }
 
-const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
+interface EventUser {
+  type: "me" | "setUser" | "addUser" | "removeUser";
+  data: User;
+}
+
+interface EventSetUsers {
+  type: "setUsers";
+  data: User[];
+}
+
+interface EventChatInvite {
+  type: "chatInvite" | "chatInviteCancel";
+  data: ChatInvite;
+}
+
+interface EventChatRes {
+  type: "chatInviteRes";
+  data: {
+    from: User;
+    target: string; // User.id
+    response: boolean;
+  };
+}
+
+interface EventIceCandidate {
+  type: "ice-candidate";
+  data: {
+    from: string; // me.id
+    target: string; // peer.id
+    candidate: RTCIceCandidateInit;
+  };
+}
+
+interface EventSDPDescription {
+  type: "offer" | "answer";
+  data: {
+    from: string; // me.id
+    target: string; // peer.id
+    description: RTCSessionDescriptionInit;
+  };
+}
+
+type EventData =
+  | EventUser
+  | EventSetUsers
+  | EventChatInvite
+  | EventChatRes
+  | EventIceCandidate
+  | EventSDPDescription;
 
 interface LoginViewProps {
   setUsername: (username: string) => void;
@@ -48,23 +96,46 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   );
 };
 
+interface useSocketServerProps {
+  username: string | null;
+  setMe: (me: User) => void;
+}
+
+const useSocketServer = ({ username, setMe }: useSocketServerProps) => {
+  const [socket, setSocket] = React.useState<WebSocket | null>(null);
+
+  React.useEffect(() => {
+    if (socket || !username) return;
+
+    const socketServer = new WebSocket(WEBSOCKET_URL + username);
+    setSocket(socketServer);
+
+    socketServer.addEventListener("message", (e) => {
+      const { type, data }: EventData = JSON.parse(e.data);
+
+      if (type === "me") setMe(data);
+    });
+
+    return () => socketServer.close();
+  }, [username]);
+
+  return socket;
+};
+
 interface ChatViewProps {
-  socket: WebSocket;
-  chat: Chat;
   me: User;
-  setChat: (chat: Chat) => void;
+  peer: User;
+  socket: WebSocket;
+  host: boolean;
 }
 
-interface Message {
-  author: User;
-  body: string;
-}
-
-const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
+const ChatView: React.FC<ChatViewProps> = ({ me, peer, socket, host }) => {
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [message, setMessage] = React.useState("");
   const [pc, setPc] = React.useState(new RTCPeerConnection());
   const [dc, setDc] = React.useState<RTCDataChannel | null>(null);
+
+  const messagesRef = React.useRef<HTMLDivElement>(null);
 
   const sendMessage = () => {
     dc?.send(message);
@@ -74,7 +145,7 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
 
   pc.oniceconnectionstatechange = function () {
     if (pc.iceConnectionState == "disconnected") {
-      setChat({ host: false, user: null, open: false, status: null });
+      console.log("ice connection state: disconnected");
     }
   };
 
@@ -84,7 +155,7 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
         type: "ice-candidate",
         data: {
           from: me.id,
-          to: chat.user?.id,
+          target: peer.id,
           candidate: e.candidate,
         },
       })
@@ -92,21 +163,21 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
   };
 
   const handleExit = () => {
-    pc.close();
-    setChat({ ...chat, open: false, user: null });
+    console.log("handle exit here");
   };
 
   React.useEffect(() => {
     var dataChannel;
 
     const handleMessages = (e: MessageEvent) => {
-      setMessages([...messages, { author: chat.user!, body: e.data }]);
+      setMessages((messages) => [...messages, { author: peer, body: e.data }]);
     };
 
-    if (chat.host) {
+    if (host) {
       dataChannel = pc.createDataChannel("chat");
 
       dataChannel.addEventListener("message", (e) => handleMessages(e));
+      dataChannel.addEventListener("close", () => handleExit());
 
       setDc(dataChannel);
     } else {
@@ -114,14 +185,15 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
         dataChannel = e.channel;
 
         dataChannel.addEventListener("message", (e) => handleMessages(e));
+        dataChannel.addEventListener("close", () => handleExit());
 
         setDc(dataChannel);
       };
     }
-  }, [messages]);
+  }, []);
 
   React.useEffect(() => {
-    if (!chat.host) return;
+    if (!host) return;
 
     pc.createOffer()
       .then((offer) => pc.setLocalDescription(offer))
@@ -131,7 +203,7 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
             type: "offer",
             data: {
               from: me.id,
-              to: chat.user!.id,
+              target: peer.id,
               description: pc.localDescription,
             },
           })
@@ -143,7 +215,7 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
 
   React.useEffect(() => {
     const handleEvents = async (e: MessageEvent) => {
-      var { type, data } = JSON.parse(e.data);
+      const { type, data }: EventData = JSON.parse(e.data);
 
       switch (type) {
         case "ice-candidate":
@@ -165,7 +237,7 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
                   type: "answer",
                   data: {
                     from: me.id,
-                    to: data.from,
+                    target: data.from,
                     description: pc.localDescription,
                   },
                 })
@@ -179,18 +251,6 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
         case "answer":
           await pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
-            // .then(() =>
-            //   socket.send(
-            //     JSON.stringify({
-            //       type: "answer",
-            //       data: {
-            //         from: me.id,
-            //         to: data.from,
-            //         description: pc.localDescription,
-            //       },
-            //     })
-            //   )
-            // )
             .then(() => console.log("Answer set as remote description"))
             .catch((error) =>
               console.log("Caught an error while setting: answer", error)
@@ -202,175 +262,175 @@ const ChatView: React.FC<ChatViewProps> = ({ socket, chat, me, setChat }) => {
     };
 
     socket.addEventListener("message", (e) => handleEvents(e));
-    return () => socket.removeEventListener("message", handleEvents);
+    return () => socket.removeEventListener("message", (e) => handleEvents(e));
   }, []);
+
+  React.useEffect(() => {
+    messagesRef.current?.scrollTo({top: messagesRef.current.scrollHeight})
+  }, [messages]);
 
   return (
     <>
-      <div className="h-8 flex flex-row items-center gap-2 p-2 border-b ">
-        <span className="grow">Chatting with {chat.user?.username}</span>
-        <MdClose size={24} onClick={() => handleExit()} />
-      </div>
-      <div className="relative grow flex flex-col">
-        <div className="grow flex flex-col gap-2 p-2">
-          {messages.map((message) => (
-            <div key={cuid()} className="flex flex-col border">
-              <div
-                className={`flex flex-col gap-0.5 ${
-                  message.author.id === me.id ? "items-end" : ""
-                }`}
-              >
-                <p className="font-semibold">{message.author.username}</p>
-                <p>{message.body}</p>
-              </div>
+      <div ref={messagesRef} className="overflow-y-auto min-h-0 flex flex-col">
+        {messages.map((message) => (
+          <div key={cuid()} className="flex flex-row gap-2 p-2 border-b">
+            <img
+              className="rounded w-10 h-10"
+              src={`https://ui-avatars.com/api/?name=${message.author.username}`}
+              alt={message.author.username}
+            />
+            <div className="flex flex-col gap-2">
+              <span className="text-lg font-bold">
+                {message.author.username}
+              </span>
+              <p className="">{message.body}</p>
             </div>
-          ))}
-        </div>
-        <div className="absolute bottom-0 w-full flex flex-row gap-2 p-2 border-y">
-          <input
-            className="grow input input-bordered"
-            value={message}
-            onChange={(e) => setMessage(e.currentTarget.value)}
-          />
-          <button className="btn" onClick={() => sendMessage()}>
-            Send
-          </button>
-        </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto w-full flex flex-row items-center gap-4 p-2 bg-base-100 border-t">
+        <input
+          type="text"
+          value={message}
+          className="flex-grow input input-bordered"
+          onChange={(e) => setMessage(e.currentTarget.value)}
+        />
+        <button className="btn btn-primary" onClick={() => sendMessage()}>
+          Send
+        </button>
       </div>
     </>
   );
 };
 
-interface MainViewProps {
-  username: string;
+interface HomeViewProps {
+  me: User;
+  socket: WebSocket;
 }
 
-const MainView: React.FC<MainViewProps> = ({ username }) => {
-  const [socket, setSocket] = React.useState<WebSocket | null>(null);
-  const [chat, setChat] = React.useState<Chat>({
-    user: null,
-    open: false,
-    status: null,
-    host: false,
-  });
-  const [chatOffer, setChatOffer] = React.useState<ChatOffer>({
-    from: null,
-  });
-
-  const [me, setMe] = React.useState<User | null>(null);
+const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [users, setUsers] = React.useState<User[]>([]);
-
-  const addUser = (user: User) => {
-    setUsers([...users, user]);
-  };
-
-  const removeUser = (userId: string) => {
-    setUsers(users.filter((user) => user.id !== userId));
-  };
-
-  const handleChatAccept = () => {
-    if (!chatOffer.from) return;
-
-    setChat({ open: true, user: chatOffer.from, status: null, host: false });
-    socket?.send(
-      JSON.stringify({
-        type: "chatInviteRes",
-        data: {
-          from: me,
-          to: chatOffer.from.id,
-          res: true,
-        },
-      })
-    );
-    setChatOffer({ from: null });
-  };
-
-  const handleChatReject = () => {
-    if (!chatOffer.from) return;
-    socket?.send(
-      JSON.stringify({
-        type: "chatInviteRes",
-        data: {
-          from: me,
-          to: chatOffer.from.id,
-          res: false,
-        },
-      })
-    );
-
-    setChatOffer({ from: null });
-  };
-
-  const sendChatOffer = (user: User) => {
-    socket?.send(
-      JSON.stringify({
-        type: "chatInvite",
-        data: {
-          from: me,
-          to: user.id,
-        },
-      })
-    );
-    setChat({ open: false, user: user, status: "pending", host: true });
-  };
+  const [invitedUser, setInvitedUser] = React.useState<User | null>(null);
+  const [chatInvites, setChatInvites] = React.useState<ChatInvite[]>([]);
+  const [peer, setPeer] = React.useState<User | null>(null);
 
   React.useEffect(() => {
-    if (socket || !username) return;
+    socket.addEventListener("message", (e) => {
+      const { type, data }: EventData = JSON.parse(e.data);
 
-    const connection = new WebSocket(WEBSOCKET_URL + username);
-    setSocket(connection);
-
-    connection.addEventListener("message", (e) => {
-      var { type, data } = JSON.parse(e.data);
       switch (type) {
-        case "setMe":
-          // data: User
-          setMe(data);
-          break;
-        case "addUser":
-          // data: User
-          addUser(data);
-          break;
-        case "removeUser":
-          // data: userId
-          removeUser(data);
-          break;
         case "setUsers":
-          // data: User[]
           setUsers(data);
           break;
+        case "addUser":
+          setUsers((users) => [...users, data]);
+          break;
+        case "removeUser":
+          setUsers((users) => users.filter((user) => user.id !== data.id));
+          break;
         case "chatInvite":
-          // data: {from, to}
-          setChatOffer({ from: data.from });
-          toast("New chat offer");
+          toast(`${data.user.username} has invited you to chat!`);
+          setChatInvites((chatInvites) => [...chatInvites, data]);
+          break;
+        case "chatInviteCancel":
+          setChatInvites((chatInvites) =>
+            chatInvites.filter((c) => c.user.id !== data.user.id)
+          );
           break;
         case "chatInviteRes":
-          // data: {from: User, to, res: boolean}
-          if (data.res === false) {
-            toast.error(`${data.from.username} rejected your chat offer`);
-            setChat({ open: chat.open, status: null, user: null, host: false });
-          }
-
-          if (data.res === true) {
-            toast.success(`${data.from.username} accepted your chat offer`);
-            setChat({ user: data.from, open: true, status: null, host: true });
+          if (data.response === true) {
+            setPeer(data.from);
+          } else {
+            toast("Chat offer rejected");
+            setInvitedUser(null);
           }
           break;
         default:
           break;
       }
     });
+  }, []);
 
-    return () => connection?.close();
-  }, [username]);
+  const sendChatInvite = (user: User) => {
+    setInvitedUser(user);
 
-  if (!me) return null;
+    socket.send(
+      JSON.stringify({
+        type: "chatInvite",
+        data: {
+          target: user.id,
+          from: me,
+        },
+      })
+    );
+  };
+
+  const cancelInvite = () => {
+    if (!invitedUser) return;
+
+    socket.send(
+      JSON.stringify({
+        type: "chatInviteCancel",
+        data: {
+          target: invitedUser.id,
+          from: me,
+        },
+      })
+    );
+    setInvitedUser(null);
+  };
+
+  const acceptInvite = (user: User) => {
+    setPeer(user);
+
+    socket.send(
+      JSON.stringify({
+        type: "chatInviteRes",
+        data: {
+          from: me,
+          target: user.id,
+          response: true,
+        },
+      })
+    );
+
+    chatInvites.forEach((invite) => {
+      if (invite.user.id === user.id) return;
+      socket.send(
+        JSON.stringify({
+          type: "chatInviteRes",
+          data: {
+            from: me,
+            target: invite.user.id,
+            response: false,
+          },
+        })
+      );
+    });
+    setChatInvites([]);
+  };
+
+  const rejectInvite = (user: User) => {
+    setChatInvites((invites) =>
+      invites.filter((invite) => invite.user.id !== user.id)
+    );
+
+    socket.send(
+      JSON.stringify({
+        type: "chatInviteRes",
+        data: {
+          from: me,
+          target: user.id,
+          response: false,
+        },
+      })
+    );
+  };
 
   return (
-    <div className="mx-auto h-screen max-w-screen-md flex flex-col items-center">
-      <header className="navbar h-16">
-        <div className="navbar-start"></div>
-        <div className="navbar-center">
+    <div className="h-screen flex flex-col gap-2">
+      <header className="navbar h-16 border-b">
+        <div className="navbar-start">
           <span className="text-xl">Loquor</span>
         </div>
         <div className="navbar-end">
@@ -382,65 +442,78 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
         </div>
       </header>
 
-      <main className="w-full border flex flex-col items-center p-2">
-        <h1>A peer to peer chat app application.</h1>
-        {chatOffer.from && (
-          <div className="flex flex-row items-center gap-2">
-            <span>{chatOffer.from.username} wants to chat - </span>
-            <button className="btn" onClick={() => handleChatAccept()}>
-              Accept
-            </button>
-            <button className="btn" onClick={() => handleChatReject()}>
-              Reject
-            </button>
-          </div>
-        )}
+      <main className="w-full">
+        <h1 className="text-center">
+          Chat with others... <span className="font-semibold">privately!</span>
+        </h1>
       </main>
-      <div className="grow w-full max-w-screen-md flex flex-row">
-        {/* sidebar */}
-        <div className="grow max-w-[80px] flex flex-col gap-1 border-x">
-          {/* view more */}
-          <div
-            className="h-8 flex flex-row gap-1 items-center justify-center cursor-pointer tooltip border-b"
-            data-tip="Show more"
-          >
-            <MdKeyboardArrowRight size={32} />
-          </div>
-          {/* users */}
-          <div className="flex flex-col">
-            {/* all */}
-            <div className="flex flex-col items-center gap-2 py-2">
-              {users
-                .filter((user) => user.id !== me.id)
-                .map((user) => (
-                  <div
-                    key={user.id}
-                    className="cursor-pointer"
-                    onClick={() => sendChatOffer(user)}
-                  >
-                    <img
-                      className="rounded w-12 h-12"
-                      src={`https://ui-avatars.com/api/?name=${user.username}`}
-                      alt={user.username}
-                    />
-                  </div>
-                ))}
-            </div>
-          </div>
+
+      <div className="flex-grow flex flex-row overflow-y-auto min-h-0">
+        {/* users online */}
+        <div className="min-w-[80px] flex flex-col items-center border py-2">
+          {users
+            .filter((user) => user.id !== me.id)
+            .map((user) => (
+              <div
+                key={user.id}
+                className="cursor-pointer tooltip tooltip-right"
+                data-tip={`Invite ${user.username} to chat`}
+                onClick={() => sendChatInvite(user)}
+              >
+                <img
+                  className="rounded w-12 h-12"
+                  src={`https://ui-avatars.com/api/?name=${user.username}`}
+                  alt={user.username}
+                />
+              </div>
+            ))}
         </div>
-        {/* Chat area */}
-        <div className="grow flex flex-col border-r">
-          {chat.open && chat.user && socket ? (
-            <ChatView socket={socket} chat={chat} me={me} setChat={setChat} />
-          ) : (
-            <div className="grow flex flex-col items-center justify-center">
-              {chat.status === "pending" ? (
-                <span>Chat offer sent, please wait patiently</span>
-              ) : (
-                <span>Click on a user to request a chatting session</span>
-              )}
+        <div className="relative flex-grow border-t flex flex-col">
+          {chatInvites.length > 0 && (
+            <div className="h-fit flex flex-col gap-1 p-2 border-b">
+              {chatInvites.map((invite) => (
+                <div
+                  key={invite.user.id}
+                  className="flex flex-row items-center gap-1"
+                >
+                  <div className="grow">
+                    {invite.user.username} invited you to chat!
+                  </div>
+                  <div className="flex flex-row items-center gap-1">
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => acceptInvite(invite.user)}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => rejectInvite(invite.user)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
+          {invitedUser && !peer && (
+            <div className="grow flex flex-col items-center justify-center gap-2">
+              <p>Waiting for {invitedUser.username} to respond</p>
+              <button className="btn" onClick={() => cancelInvite()}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {peer && (
+            <ChatView
+              me={me}
+              peer={peer}
+              socket={socket}
+              host={invitedUser ? true : false}
+            />
+          )}
+          {!invitedUser && !peer && <div>ain't nothing happening</div>}
         </div>
       </div>
     </div>
@@ -449,12 +522,17 @@ const MainView: React.FC<MainViewProps> = ({ username }) => {
 
 const App: React.FC = () => {
   const [username, setUsername] = React.useState<string | null>(null);
+  const [me, setMe] = React.useState<User | null>(null);
+
+  const socket = useSocketServer({ username, setMe });
 
   if (!username) {
     return <LoginView setUsername={setUsername} />;
   }
 
-  return <MainView username={username} />;
+  if (!me || !socket) return <div>Connecting</div>;
+
+  return <HomeView me={me} socket={socket} />;
 };
 
 export default App;
