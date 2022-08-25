@@ -5,4 +5,28 @@ module.exports = {
     extend: {},
   },
   plugins: [require("daisyui")],
+  daisyui: {
+    styled: true,
+    themes: [
+      {
+        terminal: {
+          primary: "#22c55e",
+          secondary: "#034a1d",
+          accent: "#f3f4f6",
+          neutral: "#375702",
+          "base-100": "#01383d",
+          info: "#3ABFF8",
+          success: "#36D399",
+          warning: "#FBBD23",
+          error: "#F87272",
+        },
+      },
+    ],
+    base: true,
+    utils: true,
+    logs: true,
+    rtl: false,
+    prefix: "",
+    darkTheme: "dark",
+  },
 };

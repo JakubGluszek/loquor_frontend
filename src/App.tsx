@@ -1,6 +1,11 @@
 import React, { memo } from "react";
 import toast from "react-hot-toast";
-import { MdKeyboardArrowRight, MdClose } from "react-icons/md";
+import { MdClose, MdOutlineExitToApp, MdSearch } from "react-icons/md";
+import {
+  AiOutlineSortAscending,
+  AiOutlineSortDescending,
+} from "react-icons/ai";
+import { SiGooglechat } from "react-icons/si";
 import cuid from "cuid";
 
 const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
@@ -18,10 +23,12 @@ interface Message {
   author: User;
   target: User;
   body: string;
+  read?: boolean;
 }
 
 interface Peer {
   pc: RTCPeerConnection;
+  user: User;
   host: boolean;
   dc?: RTCDataChannel;
 }
@@ -84,11 +91,19 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <div className="min-h-screen w-screen flex items-center justify-center">
+    <div className="min-h-screen w-screen flex flex-col gap-8 items-center justify-center">
+      <h1 className="text-2xl">Welcome to Loquor</h1>
+      <p className="text-center">
+        A platform where you can chat with other using a peer to peer
+        connection.
+      </p>
       <div className="flex flex-col gap-4 border  p-4">
         <input
           placeholder="Username"
           ref={usernameRef}
+          onKeyUp={(e) =>
+            e.key === "Enter" && setUsername(usernameRef.current!.value)
+          }
           className="input input-bordered"
           type="text"
         />
@@ -150,11 +165,15 @@ const ChatView: React.FC<ChatViewProps> = ({
     setMessage("");
   };
 
+  React.useEffect(() => {
+    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
+  }, [messages]);
+
   return (
     <>
       <div ref={messagesRef} className="overflow-y-auto min-h-0 flex flex-col">
         {messages.map((message) => (
-          <div key={cuid()} className="flex flex-row gap-2 p-2 border-b">
+          <div key={cuid()} className="flex flex-row gap-2 p-2 sm:p-4 border-b">
             <img
               className="rounded w-10 h-10"
               src={`https://ui-avatars.com/api/?name=${message.author.username}`}
@@ -173,10 +192,14 @@ const ChatView: React.FC<ChatViewProps> = ({
         <input
           type="text"
           value={message}
-          className="flex-grow input input-bordered"
+          onKeyUp={(e) => e.key === "Enter" && send()}
+          className="flex-grow input input-bordered input-sm sm:input-md"
           onChange={(e) => setMessage(e.currentTarget.value)}
         />
-        <button className="btn btn-primary" onClick={() => send()}>
+        <button
+          className="btn btn-primary btn-sm sm:btn-md"
+          onClick={() => send()}
+        >
           Send
         </button>
       </div>
@@ -191,10 +214,11 @@ interface HomeViewProps {
 
 const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [users, setUsers] = React.useState<User[]>([]);
-  const [invitedUser, setInvitedUser] = React.useState<User | null>(null);
+  const [invitedUsers, setInvitedUsers] = React.useState<User[]>([]);
   const [chatInvites, setChatInvites] = React.useState<User[]>([]);
   const [openChat, setOpenChat] = React.useState<User | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
+  const [viewInvite, setViewInvite] = React.useState<User | null>(null);
 
   const [peers, setPeers] = React.useState<{
     [userID: string]: Peer;
@@ -217,7 +241,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           setUsers((users) => users.filter((user) => user.id !== data.id));
           break;
         case "chatInvite":
-          toast(`${data.user.username} has invited you to chat!`);
           setChatInvites((chatInvites) => [...chatInvites, data.user]);
           break;
         case "chatInviteCancel":
@@ -240,7 +263,9 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           if (data.response === true) {
             if (!peers[data.from.id]) return;
             toast("Chat offer accepted");
-            setInvitedUser(null);
+            setInvitedUsers((users) =>
+              users.filter((user) => user.id !== data.from.id)
+            );
 
             peers[data.from.id].dc = peers[data.from.id].pc.createDataChannel(
               cuid()
@@ -275,16 +300,15 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   })
                 )
               )
-              .then(() =>
-                console.log("Offer created & set as local description.")
-              )
               .catch((error) =>
                 console.log("Error while creating offer", error)
               );
           } else {
-            toast("Chat offer rejected");
+            toast(`${data.from.username} rejected your chat offer :(`);
             removePeer(data.from.id);
-            setInvitedUser(null);
+            setInvitedUsers((users) =>
+              users.filter((user) => user.id !== data.from.id)
+            );
           }
           break;
         case "ice-candidate":
@@ -295,7 +319,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           if (!peers[data.from]) return;
           peers[data.from].pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
-            .then(() => console.log("Offer set!"))
             .catch((error) =>
               console.log("Caught an error while setting: offer", error)
             );
@@ -314,7 +337,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 })
               )
             )
-            .then(() => console.log("Answer created!"))
             .catch((error) =>
               console.log("Caught an error while creating an answer", error)
             );
@@ -323,7 +345,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           if (!peers[data.from]) return;
           peers[data.from].pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
-            .then(() => console.log("Answer set as remote description"))
             .catch((error) =>
               console.log("Caught an error while setting: answer", error)
             );
@@ -338,6 +359,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     let peer: Peer = {
       pc: new RTCPeerConnection(),
       host,
+      user,
       dc: undefined,
     };
 
@@ -357,7 +379,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     if (!host) {
       peer.pc.ondatachannel = (e) => {
         let dc = e.channel;
-        console.log("new data channel");
 
         dc.onopen = () => setOpenChat(user);
         dc.onmessage = (e) =>
@@ -393,18 +414,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   };
 
   const sendInvite = (user: User) => {
-    if (invitedUser) {
-      if (user.id === invitedUser.id) return;
-      socket.send(
-        JSON.stringify({
-          type: "chatInviteCancel",
-          data: {
-            target: invitedUser.id,
-            from: me,
-          },
-        })
-      );
-    }
+    if (invitedUsers.includes(user)) return;
 
     socket.send(
       JSON.stringify({
@@ -417,26 +427,28 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     );
 
     createPeer(user, true);
-    setInvitedUser(user);
+    setInvitedUsers((users) => [...users, user]);
   };
 
-  const cancelInvite = () => {
-    if (!invitedUser) return;
+  const cancelInvite = (user: User) => {
+    if (!invitedUsers.includes(user)) return;
 
     socket.send(
       JSON.stringify({
         type: "chatInviteCancel",
         data: {
-          target: invitedUser.id,
+          target: user.id,
           from: me,
         },
       })
     );
-    setInvitedUser(null);
+
+    setInvitedUsers((users) => users.filter((u) => u.id !== user.id));
   };
 
   const acceptInvite = (user: User) => {
     createPeer(user, false);
+    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
 
     socket.send(
       JSON.stringify({
@@ -448,21 +460,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         },
       })
     );
-
-    chatInvites.forEach((u) => {
-      if (u.id === user.id) return;
-      socket.send(
-        JSON.stringify({
-          type: "chatInviteRes",
-          data: {
-            from: me,
-            target: u.id,
-            response: false,
-          },
-        })
-      );
-    });
-    setChatInvites([]);
+    setViewInvite(null);
   };
 
   const rejectInvite = (user: User) => {
@@ -478,110 +476,141 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         },
       })
     );
+
+    setViewInvite(null);
   };
 
   const sendMessage = (userID: string, message: Message) => {
-    console.log(peers[userID]);
     peers[userID].dc?.send(message.body);
     setMessages((messages) => [...messages, message]);
   };
 
   return (
-    <div className="h-screen flex flex-col gap-2">
-      <header className="navbar h-16 border-b">
-        <div className="navbar-start">
-          <span className="text-xl">Loquor</span>
-        </div>
-        <div className="navbar-end">
-          <img
-            className="rounded w-12 h-12"
-            src={`https://ui-avatars.com/api/?name=${me.username}`}
-            alt="Me"
-          />
-        </div>
-      </header>
-
-      <main className="w-full">
-        <h1 className="text-center">
-          Chat with others... <span className="font-semibold">privately!</span>
-        </h1>
-      </main>
-
-      <div className="flex-grow flex flex-row overflow-y-auto min-h-0">
-        {/* users online */}
-        <div className="min-w-[80px] flex flex-col items-center border gap-4 py-2">
-          {users
-            .filter((user) => user.id !== me.id)
-            .map((user) => (
-              <div
-                key={user.id}
-                className="z-50 cursor-pointer tooltip tooltip-right"
-                data-tip={`Invite ${user.username} to chat`}
-                onClick={() => {
-                  if (openChat?.id === user.id) return;
-                  if (peers[user.id]) setOpenChat(user);
-                  else sendInvite(user);
-                }}
+    <>
+      {/* modals */}
+      <input type="checkbox" id="handleInvite" className="modal-toggle" />
+      <label htmlFor="handleInvite" className="modal bg-base-300 bg-opacity-60">
+        {viewInvite && (
+          <label
+            className="modal-box flex flex-col items-center gap-8"
+            htmlFor=""
+          >
+            <p className="text-lg text-center">
+              <span className="font-bold">{viewInvite.username}</span> sent you
+              a chat invitation!
+            </p>
+            <div className="flex flex-row items-center gap-8">
+              <button className="" onClick={() => rejectInvite(viewInvite)}>
+                Reject
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => acceptInvite(viewInvite)}
               >
-                <img
-                  className="rounded w-12 h-12"
-                  src={`https://ui-avatars.com/api/?name=${user.username}`}
-                  alt={user.username}
-                />
-              </div>
-            ))}
-        </div>
-        <div className="relative flex-grow border-t flex flex-col">
-          {chatInvites.length > 0 && (
-            <div className="h-fit flex flex-col gap-1 p-2 border-b">
-              {chatInvites.map((u) => (
-                <div key={u.id} className="flex flex-row items-center gap-1">
-                  <div className="grow">{u.username} invited you to chat!</div>
-                  <div className="flex flex-row items-center gap-1">
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => acceptInvite(u)}
-                    >
-                      Accept
-                    </button>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => rejectInvite(u)}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {invitedUser && !openChat && (
-            <div className="grow flex flex-col items-center justify-center gap-2">
-              <p>Waiting for {invitedUser.username} to respond</p>
-              <button className="btn" onClick={() => cancelInvite()}>
-                Cancel
+                Accept
               </button>
             </div>
-          )}
-          {openChat && (
-            <>
-              <div className="flex flex-row items-center gap-2 p-2">
-                <div className="grow text-lg">
-                  Chatting with{" "}
-                  <span className="font-bold">{openChat.username}</span>
+          </label>
+        )}
+      </label>
+
+      <div className="h-screen flex flex-col">
+        <header className="navbar h-16 border-b">
+          <div className="navbar-start"></div>
+          <div className="navbar-center">
+            <span className="text-xl">Loquor</span>
+          </div>
+          <div className="navbar-end">
+            <img
+              className="rounded w-12 h-12"
+              src={`https://ui-avatars.com/api/?name=${me.username}`}
+              alt="Me"
+            />
+          </div>
+        </header>
+
+        <main className="w-full border-b p-1">
+          <h1 className="text-center">
+            Chat with others...{" "}
+            <span className="font-semibold">privately!</span>
+          </h1>
+        </main>
+
+        <div className="flex-grow flex flex-row overflow-y-auto min-h-0">
+          {/* chats */}
+          <div className="min-w-[80px] sm:min-w-[100px] flex flex-col border-r">
+            <div className="h-16 flex flex-col items-center justify-center">
+              <SiGooglechat size={32} className="w-6 h-6 sm:w-8 sm:h-8" />
+            </div>
+            {/* chat invites */}
+            {chatInvites.length > 0 && (
+              <div className="flex flex-col items-center -translate-y-[1px] py-2 border-y">
+                <span className="text-xs">Invites</span>
+                <div className="flex flex-col items-center gap-4 py-2">
+                  {chatInvites.map((u) => (
+                    <label
+                      key={u.id}
+                      className="cursor-pointer"
+                      htmlFor="handleInvite"
+                      onClick={() => setViewInvite(u)}
+                    >
+                      <img
+                        className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                        src={`https://ui-avatars.com/api/?name=${u.username}`}
+                        alt={u.username}
+                      />
+                    </label>
+                  ))}
                 </div>
-                <button className="btn" onClick={() => setOpenChat(null)}>
-                  Close
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setOpenChat(null);
-                    removePeer(openChat.id);
-                  }}
-                >
-                  Terminate
-                </button>
+              </div>
+            )}
+            {/* open chats */}
+            <div className="flex flex-col items-center gap-4 py-8">
+              {Object.entries(peers).map(
+                ([k, v]) =>
+                  v.dc &&
+                  k !== openChat?.id && (
+                    <div
+                      key={k}
+                      className="cursor-pointer"
+                      onClick={() => setOpenChat(v.user)}
+                    >
+                      <img
+                        className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                        src={`https://ui-avatars.com/api/?name=${v.user.username}`}
+                        alt={v.user.username}
+                      />
+                    </div>
+                  )
+              )}
+            </div>
+          </div>
+          {openChat ? (
+            <div className="flex-grow flex flex-col overflow-y-auto min-h-0">
+              {/* current chat header */}
+              <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-200 border-b">
+                <img
+                  className="rounded w-8 h-8 sm:w-10 sm:h-10"
+                  src={`https://ui-avatars.com/api/?name=${openChat.username}`}
+                  alt={openChat.username}
+                />
+                <span className="text-lg sm:text-2xl font-bold">
+                  {openChat.username}
+                </span>
+                <div className="ml-auto flex flex-row items-center gap-4">
+                  <button
+                    className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+                    onClick={() => setOpenChat(null)}
+                  >
+                    <MdClose size={24} />
+                  </button>
+                  <button
+                    className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+                    onClick={() => removePeer(openChat.id)}
+                  >
+                    <MdOutlineExitToApp size={24} />
+                  </button>
+                </div>
               </div>
               <ChatView
                 me={me}
@@ -592,12 +621,62 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 )}
                 sendMessage={sendMessage}
               />
-            </>
+            </div>
+          ) : (
+            <div className="flex-grow flex flex-col overflow-y-auto min-h-0">
+              <div className="h-16 flex flex-row items-center gap-4 px-4 border-b">
+                <button className="">
+                  <MdSearch size={24} className="sm:w-8 sm:h-8" />
+                </button>
+                <button className="">
+                  <AiOutlineSortAscending size={24} className="sm:w-8 sm:h-8" />
+                </button>
+              </div>
+              {/* users */}
+              <div className="flex-grow flex flex-col gap-4 p-2 sm:p-4 overflow-x-hidden">
+                {users.map(
+                  (user) =>
+                    user.id !== me.id &&
+                    !peers[user.id]?.dc && (
+                      <div
+                        key={user.id}
+                        className="flex flex-row flex-wrap items-center bg-base-200 gap-4 p-2 sm:p-4 rounded"
+                      >
+                        <img
+                          className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                          src={`https://ui-avatars.com/api/?name=${user.username}`}
+                          alt={user.username}
+                        />
+                        <span
+                          className="text-lg sm:text-2xl font-bold tooltip tooltip-right"
+                          data-tip={`ID: ${user.id}`}
+                        >
+                          {user.username}
+                        </span>
+                        {invitedUsers.includes(user) ? (
+                          <button
+                            className="ml-auto btn btn-secondary btn-sm sm:btn-md"
+                            onClick={() => cancelInvite(user)}
+                          >
+                            Cancel invite
+                          </button>
+                        ) : (
+                          <button
+                            className="ml-auto btn btn-primary btn-sm sm:btn-md"
+                            onClick={() => sendInvite(user)}
+                          >
+                            Invite to chat
+                          </button>
+                        )}
+                      </div>
+                    )
+                )}
+              </div>
+            </div>
           )}
-          {!invitedUser && !openChat && <div>ain't nothing happening</div>}
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
