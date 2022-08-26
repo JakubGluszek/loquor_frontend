@@ -2,18 +2,10 @@
 
 ## TODOS
 
-- [x] Add a welcome & page description section in `<LoginView />`
-- [x] Restructure `<HomeView />` Layout
-- [x] Display unread messages count on for hidden chats
-  - [ ] Handle this better?? format??
-- [ ] Create a `<Message />` component ??
-  - [x] Add a timestamp (format => human readable)
-- [x] Filter users by:
-  - [x] Username
-  - [ ] ID ??
-- [x] Sort users by:
-  - [x] Username
-- [x] Animate arrays
+- [ ] "User is typing..."
+- [ ] Notifications ??
+- [ ] Settings section
+  - [ ] Store settings in local storage
 
 ## TODOS +
 

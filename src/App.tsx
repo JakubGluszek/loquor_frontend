@@ -10,6 +10,7 @@ import { HiUserAdd } from "react-icons/hi";
 import cuid from "cuid";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { formatDistance } from "date-fns";
+import { Loader } from "@mantine/core";
 
 const WEBSOCKET_URL = import.meta.env.VITE_WS_SERVER;
 
@@ -159,6 +160,7 @@ interface ChatViewProps {
   user: User;
   messages: Message[];
   sendMessage: (userID: string, message: Message) => void;
+  dc: RTCDataChannel;
 }
 
 const ChatView: React.FC<ChatViewProps> = ({
@@ -166,8 +168,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   user,
   messages,
   sendMessage,
+  dc,
 }) => {
   const [message, setMessage] = React.useState("");
+  const [isTyping, setIsTyping] = React.useState(false);
   const container = React.useRef<HTMLDivElement>(null);
 
   const send = () => {
@@ -177,8 +181,27 @@ const ChatView: React.FC<ChatViewProps> = ({
       body: message,
       timestamp: new Date(),
     });
+    dc.send(
+      JSON.stringify({
+        type: "isTyping",
+        data: {
+          isTyping: false,
+          author: me,
+        },
+      })
+    );
     setMessage("");
   };
+
+  React.useEffect(() => {
+    dc.addEventListener("message", (e) => {
+      const { type, data } = JSON.parse(e.data);
+      if (type === "isTyping") {
+        // data: {author: User, isTyping: boolean}
+        setIsTyping(data.isTyping);
+      }
+    });
+  }, []);
 
   React.useEffect(() => {
     container.current?.scrollTo({ top: container.current.scrollHeight });
@@ -206,7 +229,7 @@ const ChatView: React.FC<ChatViewProps> = ({
                 <div className="flex flex-row items-center gap-2">
                   <span className="text-lg font-bold">{m.author.username}</span>
                   <span className="text-sm opacity-60">
-                    {formatDistance(new Date(), m.timestamp, {
+                    {formatDistance(new Date(), new Date(m.timestamp), {
                       includeSeconds: true,
                     })}
                   </span>
@@ -219,8 +242,39 @@ const ChatView: React.FC<ChatViewProps> = ({
       <div className="mt-auto w-full flex flex-row flex-wrap items-center gap-4 p-2 bg-base-100 border-t">
         <input
           value={message}
+          placeholder={
+            isTyping
+              ? `${user.username} is typing...`
+              : "Enter your message here"
+          }
           onKeyUp={(e) => e.key === "Enter" && send()}
-          onChange={(e) => setMessage(e.currentTarget.value)}
+          onChange={(e) => {
+            if (e.currentTarget.value.length === 1) {
+              dc.send(
+                JSON.stringify({
+                  type: "isTyping",
+                  data: {
+                    isTyping: true,
+                    author: me,
+                  },
+                })
+              );
+            } else if (
+              message.length > 0 &&
+              e.currentTarget.value.length === 0
+            ) {
+              dc.send(
+                JSON.stringify({
+                  type: "isTyping",
+                  data: {
+                    isTyping: false,
+                    author: me,
+                  },
+                })
+              );
+            }
+            setMessage(e.currentTarget.value);
+          }}
           type="text"
           className="flex-grow input input-bordered input-sm sm:input-md"
         />
@@ -232,6 +286,77 @@ const ChatView: React.FC<ChatViewProps> = ({
         </button>
       </div>
     </>
+  );
+};
+
+interface PeerViewProps {
+  openChat: User | null;
+  setOpenChat: (user: User) => void;
+  messages: Message[];
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  peer: Peer;
+}
+
+const PeerView: React.FC<PeerViewProps> = ({
+  openChat,
+  messages,
+  setMessages,
+  setOpenChat,
+  peer,
+}) => {
+  const [isTyping, setIsTyping] = React.useState(false);
+
+  React.useEffect(() => {
+    peer.dc!.addEventListener("message", (e) => {
+      const { type, data } = JSON.parse(e.data);
+      if (type === "isTyping") {
+        // data: {author: User, isTyping: boolean}
+        setIsTyping(data.isTyping);
+      }
+    });
+  }, []);
+
+  return (
+    <div
+      className="z-50 relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg tooltip tooltip-right tooltip-accent"
+      data-tip={peer.user.username}
+      onClick={() => {
+        if (openChat) {
+          setMessages((messages: Message[]) =>
+            messages.map((m) =>
+              m.author.id !== openChat.id ? m : { ...m, read: true }
+            )
+          );
+        }
+        setOpenChat(peer.user);
+        setMessages((messages) =>
+          messages.map((m) =>
+            m.author.id !== peer.user.id ? m : { ...m, read: true }
+          )
+        );
+      }}
+    >
+      {!isTyping &&
+        messages.filter((m) => m.author.id === peer.user.id && !m.read).length >
+          0 && (
+          <span className="absolute -top-1 -right-1 badge rounded-full p-0.5 px-1">
+            {
+              messages.filter((m) => m.author.id === peer.user.id && !m.read)
+                .length
+            }
+          </span>
+        )}
+      {isTyping && (
+        <span className="absolute -top-1 -right-1 badge rounded-full p-0.5">
+          <Loader color="dark" variant="dots" size="sm" />
+        </span>
+      )}
+      <img
+        className="rounded w-8 h-8 sm:w-12 sm:h-12"
+        src={`https://ui-avatars.com/api/?name=${peer.user.username}`}
+        alt={peer.user.username}
+      />
+    </div>
   );
 };
 
@@ -314,16 +439,9 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               setOpenChat(data.from);
             };
             peers[data.from.id].dc!.onmessage = (e) => {
-              setMessages((messages) => [
-                ...messages,
-                {
-                  author: data.from,
-                  target: me,
-                  body: e.data,
-                  read: false,
-                  timestamp: new Date(),
-                },
-              ]);
+              const { type, data } = JSON.parse(e.data);
+              if (type === "message")
+                setMessages((messages) => [...messages, data]);
             };
             peers[data.from.id].dc!.onclose = () => {
               setOpenChat(null);
@@ -444,17 +562,11 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           }
           setOpenChat(user);
         };
-        dc.onmessage = (e) =>
-          setMessages((messages) => [
-            ...messages,
-            {
-              author: user,
-              target: me,
-              body: e.data,
-              read: false,
-              timestamp: new Date(),
-            },
-          ]);
+        dc.onmessage = (e) => {
+          const { type, data } = JSON.parse(e.data);
+          if (type === "message")
+            setMessages((messages) => [...messages, data]);
+        };
         dc.onclose = () => {
           setOpenChat(null);
           removePeer(user.id);
@@ -550,7 +662,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   };
 
   const sendMessage = (userID: string, message: Message) => {
-    peers[userID].dc?.send(message.body);
+    peers[userID].dc?.send(JSON.stringify({ type: "message", data: message }));
     setMessages((messages) => [...messages, message]);
   };
 
@@ -660,48 +772,14 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   ([k, v]) =>
                     v.dc &&
                     k !== openChat?.id && (
-                      <div
+                      <PeerView
                         key={k}
-                        className="z-50 relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg tooltip tooltip-right tooltip-accent"
-                        data-tip={v.user.username}
-                        onClick={() => {
-                          if (openChat) {
-                            setMessages((messages) =>
-                              messages.map((m) =>
-                                m.author.id !== openChat.id
-                                  ? m
-                                  : { ...m, read: true }
-                              )
-                            );
-                          }
-
-                          setOpenChat(v.user);
-                          setMessages((messages) =>
-                            messages.map((m) =>
-                              m.author.id !== v.user.id
-                                ? m
-                                : { ...m, read: true }
-                            )
-                          );
-                        }}
-                      >
-                        {messages.filter(
-                          (m) => m.author.id === v.user.id && !m.read
-                        ).length > 0 && (
-                          <span className="absolute -top-1 -right-1 badge rounded-full p-0.5 px-1">
-                            {
-                              messages.filter(
-                                (m) => m.author.id === v.user.id && !m.read
-                              ).length
-                            }
-                          </span>
-                        )}
-                        <img
-                          className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                          src={`https://ui-avatars.com/api/?name=${v.user.username}`}
-                          alt={v.user.username}
-                        />
-                      </div>
+                        messages={messages}
+                        openChat={openChat}
+                        setOpenChat={setOpenChat}
+                        setMessages={setMessages}
+                        peer={v}
+                      />
                     )
                 )}
               </>
@@ -746,6 +824,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 user={openChat}
                 messages={messages}
                 sendMessage={sendMessage}
+                dc={peers[openChat.id].dc!}
               />
             </div>
           ) : (
