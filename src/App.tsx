@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React from "react";
 import toast from "react-hot-toast";
 import { MdClose, MdOutlineExitToApp, MdSearch } from "react-icons/md";
 import {
@@ -6,9 +6,12 @@ import {
   AiOutlineSortDescending,
 } from "react-icons/ai";
 import { SiGooglechat } from "react-icons/si";
+import { HiUserAdd } from "react-icons/hi";
 import cuid from "cuid";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { formatDistance } from "date-fns";
 
-const WEBSOCKET_URL = "ws://0.0.0.0:8000/";
+const WEBSOCKET_URL = import.meta.env.VITE_WS_SERVER;
 
 interface User {
   id: string;
@@ -24,6 +27,7 @@ interface Message {
   target: User;
   body: string;
   read?: boolean;
+  timestamp: Date;
 }
 
 interface Peer {
@@ -32,6 +36,8 @@ interface Peer {
   host: boolean;
   dc?: RTCDataChannel;
 }
+
+type Sort = "asc" | "desc" | null;
 
 interface EventUser {
   type: "me" | "setUser" | "addUser" | "removeUser";
@@ -91,24 +97,28 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <div className="min-h-screen w-screen flex flex-col gap-8 items-center justify-center">
-      <h1 className="text-2xl">Welcome to Loquor</h1>
+    <div className="min-h-screen w-full flex flex-col gap-8 items-center justify-center">
+      <h1 className="text-2xl">
+        Welcome to <span className="font-bold">Loquor</span>
+      </h1>
       <p className="text-center">
-        A platform where you can chat with other using a peer to peer
-        connection.
+        A platform where you can chat with others{" "}
+        <span className="font-extrabold">directly</span>.
       </p>
-      <div className="flex flex-col gap-4 border  p-4">
+      <div className="flex flex-col gap-4 p-8 border bg-base-200 rounded shadow-lg">
         <input
           placeholder="Username"
           ref={usernameRef}
+          maxLength={32}
+          minLength={1}
           onKeyUp={(e) =>
             e.key === "Enter" && setUsername(usernameRef.current!.value)
           }
-          className="input input-bordered"
+          className="input input-primary input-bordered"
           type="text"
         />
         <button
-          className="btn"
+          className="btn btn-primary"
           onClick={() => setUsername(usernameRef.current!.value)}
         >
           Enter
@@ -158,43 +168,61 @@ const ChatView: React.FC<ChatViewProps> = ({
   sendMessage,
 }) => {
   const [message, setMessage] = React.useState("");
-  const messagesRef = React.useRef<HTMLDivElement>(null);
+  const container = React.useRef<HTMLDivElement>(null);
 
   const send = () => {
-    sendMessage(user.id, { author: me, target: user, body: message });
+    sendMessage(user.id, {
+      author: me,
+      target: user,
+      body: message,
+      timestamp: new Date(),
+    });
     setMessage("");
   };
 
   React.useEffect(() => {
-    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
+    container.current?.scrollTo({ top: container.current.scrollHeight });
   }, [messages]);
 
   return (
     <>
-      <div ref={messagesRef} className="overflow-y-auto min-h-0 flex flex-col">
-        {messages.map((message) => (
-          <div key={cuid()} className="flex flex-row gap-2 p-2 sm:p-4 border-b">
-            <img
-              className="rounded w-10 h-10"
-              src={`https://ui-avatars.com/api/?name=${message.author.username}`}
-              alt={message.author.username}
-            />
-            <div className="flex flex-col gap-2">
-              <span className="text-lg font-bold">
-                {message.author.username}
-              </span>
-              <p className="">{message.body}</p>
+      <div
+        ref={container}
+        className="flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden"
+      >
+        {messages
+          .filter((m) => m.author.id === user.id || m.target.id === user.id)
+          .map((m) => (
+            <div
+              key={cuid()}
+              className="flex flex-row gap-2 p-2 sm:p-4 border-b"
+            >
+              <img
+                className="rounded w-10 h-10"
+                src={`https://ui-avatars.com/api/?name=${m.author.username}`}
+                alt={m.author.username}
+              />
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-row items-center gap-2">
+                  <span className="text-lg font-bold">{m.author.username}</span>
+                  <span className="text-sm opacity-60">
+                    {formatDistance(new Date(), m.timestamp, {
+                      includeSeconds: true,
+                    })}
+                  </span>
+                </div>
+                <p className="">{m.body}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
-      <div className="mt-auto w-full flex flex-row items-center gap-4 p-2 bg-base-100 border-t">
+      <div className="mt-auto w-full flex flex-row flex-wrap items-center gap-4 p-2 bg-base-100 border-t">
         <input
-          type="text"
           value={message}
           onKeyUp={(e) => e.key === "Enter" && send()}
-          className="flex-grow input input-bordered input-sm sm:input-md"
           onChange={(e) => setMessage(e.currentTarget.value)}
+          type="text"
+          className="flex-grow input input-bordered input-sm sm:input-md"
         />
         <button
           className="btn btn-primary btn-sm sm:btn-md"
@@ -219,6 +247,10 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [openChat, setOpenChat] = React.useState<User | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [viewInvite, setViewInvite] = React.useState<User | null>(null);
+  const [parent] = useAutoAnimate<HTMLDivElement>();
+  const [parent2] = useAutoAnimate<HTMLDivElement>();
+  const [sort, setSort] = React.useState<Sort>("desc");
+  const [query, setQuery] = React.useState("");
 
   const [peers, setPeers] = React.useState<{
     [userID: string]: Peer;
@@ -271,12 +303,28 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               cuid()
             );
 
-            peers[data.from.id].dc!.onopen = () => setOpenChat(data.from);
-            peers[data.from.id].dc!.onmessage = (e) =>
+            peers[data.from.id].dc!.onopen = () => {
+              if (openChat) {
+                setMessages((messages) =>
+                  messages.map((m) =>
+                    m.author.id !== openChat.id ? m : { ...m, read: true }
+                  )
+                );
+              }
+              setOpenChat(data.from);
+            };
+            peers[data.from.id].dc!.onmessage = (e) => {
               setMessages((messages) => [
                 ...messages,
-                { author: data.from, target: me, body: e.data },
+                {
+                  author: data.from,
+                  target: me,
+                  body: e.data,
+                  read: false,
+                  timestamp: new Date(),
+                },
               ]);
+            };
             peers[data.from.id].dc!.onclose = () => {
               setOpenChat(null);
               removePeer(data.from.id);
@@ -357,7 +405,13 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const createPeer = (user: User, host: boolean) => {
     let peer: Peer = {
-      pc: new RTCPeerConnection(),
+      pc: new RTCPeerConnection({
+        iceServers: [
+          {
+            urls: "stun:stun4.l.google.com:19302",
+          },
+        ],
+      }),
       host,
       user,
       dc: undefined,
@@ -380,11 +434,26 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
       peer.pc.ondatachannel = (e) => {
         let dc = e.channel;
 
-        dc.onopen = () => setOpenChat(user);
+        dc.onopen = () => {
+          if (openChat) {
+            setMessages((messages) =>
+              messages.map((m) =>
+                m.author.id !== openChat.id ? m : { ...m, read: true }
+              )
+            );
+          }
+          setOpenChat(user);
+        };
         dc.onmessage = (e) =>
           setMessages((messages) => [
             ...messages,
-            { author: user, target: me, body: e.data },
+            {
+              author: user,
+              target: me,
+              body: e.data,
+              read: false,
+              timestamp: new Date(),
+            },
           ]);
         dc.onclose = () => {
           setOpenChat(null);
@@ -485,6 +554,24 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     setMessages((messages) => [...messages, message]);
   };
 
+  // https://stackoverflow.com/questions/1129216/sort-array-of-objects-by-string-property-value
+  let sortedUsers;
+  if (sort === "asc") {
+    sortedUsers = users.sort((a, b) =>
+      a.username > b.username ? 1 : b.username > a.username ? -1 : 0
+    );
+  } else {
+    sortedUsers = users.sort((a, b) =>
+      a.username < b.username ? 1 : b.username < a.username ? -1 : 0
+    );
+  }
+
+  if (query.length > 0) {
+    sortedUsers = sortedUsers.filter((u) =>
+      u.username.toLowerCase().includes(query.toLowerCase())
+    );
+  }
+
   return (
     <>
       {/* modals */}
@@ -515,7 +602,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
       </label>
 
       <div className="h-screen flex flex-col">
-        <header className="navbar h-16 border-b">
+        <header className="navbar h-16 border-b bg-base-200">
           <div className="navbar-start"></div>
           <div className="navbar-center">
             <span className="text-xl">Loquor</span>
@@ -529,7 +616,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           </div>
         </header>
 
-        <main className="w-full border-b p-1">
+        <main className="w-full border-b p-4 shadow-inner">
           <h1 className="text-center">
             Chat with others...{" "}
             <span className="font-semibold">privately!</span>
@@ -543,50 +630,85 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               <SiGooglechat size={32} className="w-6 h-6 sm:w-8 sm:h-8" />
             </div>
             {/* chat invites */}
-            {chatInvites.length > 0 && (
-              <div className="flex flex-col items-center -translate-y-[1px] py-2 border-y">
-                <span className="text-xs">Invites</span>
-                <div className="flex flex-col items-center gap-4 py-2">
-                  {chatInvites.map((u) => (
-                    <label
-                      key={u.id}
-                      className="cursor-pointer"
-                      htmlFor="handleInvite"
-                      onClick={() => setViewInvite(u)}
+            <div
+              ref={parent2}
+              className="flex flex-col items-center gap-4 py-4"
+            >
+              <>
+                {chatInvites.map((u) => (
+                  <label
+                    key={u.id}
+                    className="relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg"
+                    htmlFor="handleInvite"
+                    onClick={() => setViewInvite(u)}
+                  >
+                    <span
+                      className="z-50 absolute -top-0.5 -right-0.5 badge rounded-full px-[2px] py-[4px] flex items-center justify-center tooltip tooltip-right"
+                      data-tip={`Invitation from ${u.username}`}
                     >
-                      <img
-                        className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                        src={`https://ui-avatars.com/api/?name=${u.username}`}
-                        alt={u.username}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* open chats */}
-            <div className="flex flex-col items-center gap-4 py-8">
-              {Object.entries(peers).map(
-                ([k, v]) =>
-                  v.dc &&
-                  k !== openChat?.id && (
-                    <div
-                      key={k}
-                      className="cursor-pointer"
-                      onClick={() => setOpenChat(v.user)}
-                    >
-                      <img
-                        className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                        src={`https://ui-avatars.com/api/?name=${v.user.username}`}
-                        alt={v.user.username}
-                      />
-                    </div>
-                  )
-              )}
+                      <HiUserAdd size={16} />
+                    </span>
+                    <img
+                      className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                      src={`https://ui-avatars.com/api/?name=${u.username}`}
+                      alt={u.username}
+                    />
+                  </label>
+                ))}
+                {/* open chats */}
+                {Object.entries(peers).map(
+                  ([k, v]) =>
+                    v.dc &&
+                    k !== openChat?.id && (
+                      <div
+                        key={k}
+                        className="z-50 relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg tooltip tooltip-right tooltip-accent"
+                        data-tip={v.user.username}
+                        onClick={() => {
+                          if (openChat) {
+                            setMessages((messages) =>
+                              messages.map((m) =>
+                                m.author.id !== openChat.id
+                                  ? m
+                                  : { ...m, read: true }
+                              )
+                            );
+                          }
+
+                          setOpenChat(v.user);
+                          setMessages((messages) =>
+                            messages.map((m) =>
+                              m.author.id !== v.user.id
+                                ? m
+                                : { ...m, read: true }
+                            )
+                          );
+                        }}
+                      >
+                        {messages.filter(
+                          (m) => m.author.id === v.user.id && !m.read
+                        ).length > 0 && (
+                          <span className="absolute -top-1 -right-1 badge rounded-full p-0.5 px-1">
+                            {
+                              messages.filter(
+                                (m) => m.author.id === v.user.id && !m.read
+                              ).length
+                            }
+                          </span>
+                        )}
+                        <img
+                          className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                          src={`https://ui-avatars.com/api/?name=${v.user.username}`}
+                          alt={v.user.username}
+                        />
+                      </div>
+                    )
+                )}
+              </>
             </div>
           </div>
           {openChat ? (
-            <div className="flex-grow flex flex-col overflow-y-auto min-h-0">
+            <div className="flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden">
               {/* current chat header */}
               <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-200 border-b">
                 <img
@@ -597,10 +719,17 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 <span className="text-lg sm:text-2xl font-bold">
                   {openChat.username}
                 </span>
-                <div className="ml-auto flex flex-row items-center gap-4">
+                <div className="ml-auto flex flex-row items-center gap-2">
                   <button
                     className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
-                    onClick={() => setOpenChat(null)}
+                    onClick={() => {
+                      setMessages((messages) =>
+                        messages.map((m) =>
+                          m.author.id !== openChat.id ? m : { ...m, read: true }
+                        )
+                      );
+                      setOpenChat(null);
+                    }}
                   >
                     <MdClose size={24} />
                   </button>
@@ -615,62 +744,89 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               <ChatView
                 me={me}
                 user={openChat}
-                messages={messages.filter(
-                  (m) =>
-                    m.author.id === openChat.id || m.target.id === openChat.id
-                )}
+                messages={messages}
                 sendMessage={sendMessage}
               />
             </div>
           ) : (
-            <div className="flex-grow flex flex-col overflow-y-auto min-h-0">
-              <div className="h-16 flex flex-row items-center gap-4 px-4 border-b">
-                <button className="">
-                  <MdSearch size={24} className="sm:w-8 sm:h-8" />
-                </button>
-                <button className="">
-                  <AiOutlineSortAscending size={24} className="sm:w-8 sm:h-8" />
-                </button>
+            <div className="flex-grow flex flex-col overflow-x-hidden">
+              <div className="h-16 flex flex-row items-center gap-4 px-4">
+                <label className="input-group">
+                  <span className="">
+                    <MdSearch size={24} className="w-4 h-4 sm:w-6 sm:h-6" />
+                  </span>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.currentTarget.value)}
+                    type="text"
+                    className="flex-grow input input-bordered input-sm sm:input-md"
+                  />
+                </label>
+                {query.length > 0 && (
+                  <button
+                    className="btn btn-ghost btn-sm sm:btn-md hover:btn-primary"
+                    onClick={() => setQuery("")}
+                  >
+                    <MdClose size={24} />
+                  </button>
+                )}
+                {sort === "asc" ? (
+                  <button className="" onClick={() => setSort("desc")}>
+                    <AiOutlineSortAscending
+                      size={24}
+                      className="sm:w-8 sm:h-8"
+                    />
+                  </button>
+                ) : (
+                  <button className="" onClick={() => setSort("asc")}>
+                    <AiOutlineSortDescending
+                      size={24}
+                      className="sm:w-8 sm:h-8"
+                    />
+                  </button>
+                )}
               </div>
               {/* users */}
-              <div className="flex-grow flex flex-col gap-4 p-2 sm:p-4 overflow-x-hidden">
-                {users.map(
-                  (user) =>
-                    user.id !== me.id &&
-                    !peers[user.id]?.dc && (
-                      <div
-                        key={user.id}
-                        className="flex flex-row flex-wrap items-center bg-base-200 gap-4 p-2 sm:p-4 rounded"
-                      >
-                        <img
-                          className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                          src={`https://ui-avatars.com/api/?name=${user.username}`}
-                          alt={user.username}
-                        />
-                        <span
-                          className="text-lg sm:text-2xl font-bold tooltip tooltip-right"
-                          data-tip={`ID: ${user.id}`}
+              <div className="flex-grow w-full p-2 sm:p-4 overflow-y-auto min-h-0 overflow-x-hidden">
+                <div ref={parent} className="flex flex-col gap-4">
+                  {sortedUsers.map(
+                    (user) =>
+                      user.id !== me.id &&
+                      !peers[user.id]?.dc && (
+                        <div
+                          key={user.id}
+                          className="flex flex-row flex-wrap items-center border bg-base-200 gap-4 p-2 sm:p-4 rounded shadow-lg"
                         >
-                          {user.username}
-                        </span>
-                        {invitedUsers.includes(user) ? (
-                          <button
-                            className="ml-auto btn btn-secondary btn-sm sm:btn-md"
-                            onClick={() => cancelInvite(user)}
+                          <img
+                            className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                            src={`https://ui-avatars.com/api/?name=${user.username}`}
+                            alt={user.username}
+                          />
+                          <span
+                            className="text-lg sm:text-2xl font-bold tooltip tooltip-right"
+                            data-tip={`ID: ${user.id}`}
                           >
-                            Cancel invite
-                          </button>
-                        ) : (
-                          <button
-                            className="ml-auto btn btn-primary btn-sm sm:btn-md"
-                            onClick={() => sendInvite(user)}
-                          >
-                            Invite to chat
-                          </button>
-                        )}
-                      </div>
-                    )
-                )}
+                            {user.username}
+                          </span>
+                          {invitedUsers.includes(user) ? (
+                            <button
+                              className="ml-auto btn btn-secondary btn-sm sm:btn-md"
+                              onClick={() => cancelInvite(user)}
+                            >
+                              Cancel invite
+                            </button>
+                          ) : (
+                            <button
+                              className="ml-auto btn btn-primary btn-sm sm:btn-md"
+                              onClick={() => sendInvite(user)}
+                            >
+                              Invite to chat
+                            </button>
+                          )}
+                        </div>
+                      )
+                  )}
+                </div>
               </div>
             </div>
           )}
