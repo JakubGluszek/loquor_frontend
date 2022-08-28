@@ -523,13 +523,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const createPeer = (user: User, host: boolean) => {
     let peer: Peer = {
-      pc: new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: import.meta.env.VITE_STUN_SERVER,
-          },
-        ],
-      }),
+      pc: new RTCPeerConnection({}),
       host,
       user,
       dc: undefined,
