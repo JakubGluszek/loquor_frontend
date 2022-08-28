@@ -11,6 +11,7 @@ import cuid from "cuid";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { formatDistance } from "date-fns";
 import { Loader } from "@mantine/core";
+import { STUN_SERVERS } from "./stun_servers";
 
 const WEBSOCKET_URL = import.meta.env.VITE_WS_SERVER;
 
@@ -523,7 +524,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const createPeer = (user: User, host: boolean) => {
     let peer: Peer = {
-      pc: new RTCPeerConnection({}),
+      pc: new RTCPeerConnection({ iceServers: STUN_SERVERS }),
       host,
       user,
       dc: undefined,
