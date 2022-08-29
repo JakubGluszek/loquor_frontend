@@ -32,7 +32,7 @@
   .border-r,
   .border-b,
   .border {
-    @apply border-base-300;
+    @apply border-base-100;
   }
 
   .input {

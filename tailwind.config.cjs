@@ -2,9 +2,13 @@
 module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
-    extend: {},
+    extend: {
+      screens: {
+        xs: "360px",
+      },
+    },
   },
-  plugins: [require("daisyui")],
+  plugins: [require("daisyui"), require("tailwind-scrollbar-hide")],
   daisyui: {
     styled: true,
     themes: [
@@ -14,7 +18,7 @@ module.exports = {
           secondary: "#034a1d",
           accent: "#f3f4f6",
           neutral: "#375702",
-          "base-100": "#01383d",
+          "base-100": "#10362b",
           info: "#3ABFF8",
           success: "#36D399",
           warning: "#FBBD23",

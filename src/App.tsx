@@ -98,15 +98,15 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   const usernameRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <div className="min-h-screen w-full flex flex-col gap-8 items-center justify-center">
-      <h1 className="text-2xl">
+    <div className="min-h-screen w-full flex flex-col gap-4 xs:gap-8 items-center justify-center bg-base-300 text-xs xs:text-base">
+      <h1 className="text-lg xs:text-2xl">
         Welcome to <span className="font-bold">Loquor</span>
       </h1>
       <p className="text-center">
         A platform where you can chat with others{" "}
         <span className="font-extrabold">directly</span>.
       </p>
-      <div className="flex flex-col gap-4 p-8 border bg-base-200 rounded shadow-lg">
+      <div className="flex flex-col gap-2 xs:gap-4 p-2 py-4 xs:p-8 border bg-base-100 rounded">
         <input
           placeholder="Username"
           ref={usernameRef}
@@ -115,11 +115,11 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
           onKeyUp={(e) =>
             e.key === "Enter" && setUsername(usernameRef.current!.value)
           }
-          className="input input-primary input-bordered"
+          className="input input-primary input-bordered input-sm xs:input-md"
           type="text"
         />
         <button
-          className="btn btn-primary"
+          className="btn btn-primary btn-sm xs:btn-md"
           onClick={() => setUsername(usernameRef.current!.value)}
         >
           Enter
@@ -159,38 +159,35 @@ interface ChatViewProps {
   me: User;
   user: User;
   messages: Message[];
-  sendMessage: (userID: string, message: Message) => void;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  setOpenChat: (user: User | null) => void;
   dc: RTCDataChannel;
+  removePeer: (userID: string) => void;
 }
 
 const ChatView: React.FC<ChatViewProps> = ({
   me,
   user,
   messages,
-  sendMessage,
   dc,
+  removePeer,
+  setOpenChat,
+  setMessages,
 }) => {
-  const [message, setMessage] = React.useState("");
+  const [body, setBody] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const container = React.useRef<HTMLDivElement>(null);
 
   const send = () => {
-    sendMessage(user.id, {
+    const message = {
       author: me,
       target: user,
-      body: message,
+      body,
       timestamp: new Date(),
-    });
-    dc.send(
-      JSON.stringify({
-        type: "isTyping",
-        data: {
-          isTyping: false,
-          author: me,
-        },
-      })
-    );
-    setMessage("");
+    };
+    dc.send(JSON.stringify({ type: "message", data: message }));
+    setMessages((messages) => [...messages, message]);
+    setBody("");
   };
 
   React.useEffect(() => {
@@ -199,6 +196,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       if (type === "isTyping") {
         // data: {author: User, isTyping: boolean}
         setIsTyping(data.isTyping);
+      } else if (type === "message") {
+        setIsTyping(false);
       }
     });
   }, []);
@@ -208,10 +207,40 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [messages]);
 
   return (
-    <>
+    <div className="flex-grow flex flex-col overflow-y-hidden min-h-0 overflow-x-hidden text-xs xs:text-base">
+      {/* current chat header */}
+      <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-100 border-b">
+        <img
+          className="rounded w-8 h-8 sm:w-10 sm:h-10"
+          src={`https://ui-avatars.com/api/?name=${user.username}`}
+          alt={user.username}
+        />
+        <span className="text-lg sm:text-2xl font-bold">{user.username}</span>
+        <div className="ml-auto flex flex-row items-center gap-2">
+          <button
+            className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+            onClick={() => {
+              setMessages((messages) =>
+                messages.map((m) =>
+                  m.author.id !== user.id ? m : { ...m, read: true }
+                )
+              );
+              setOpenChat(null);
+            }}
+          >
+            <MdClose size={24} />
+          </button>
+          <button
+            className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+            onClick={() => removePeer(user.id)}
+          >
+            <MdOutlineExitToApp size={24} />
+          </button>
+        </div>
+      </div>
       <div
         ref={container}
-        className="flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden"
+        className="mb-16 sm:mb-0 flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden"
       >
         {messages
           .filter((m) => m.author.id === user.id || m.target.id === user.id)
@@ -221,7 +250,7 @@ const ChatView: React.FC<ChatViewProps> = ({
               className="flex flex-row gap-2 p-2 sm:p-4 border-b"
             >
               <img
-                className="rounded w-10 h-10"
+                className="rounded w-6 h-6 sm:w-8 sm:h-8"
                 src={`https://ui-avatars.com/api/?name=${m.author.username}`}
                 alt={m.author.username}
               />
@@ -239,9 +268,11 @@ const ChatView: React.FC<ChatViewProps> = ({
             </div>
           ))}
       </div>
-      <div className="mt-auto w-full flex flex-row flex-wrap items-center gap-4 p-2 bg-base-100 border-t">
+      <div className="fixed bottom-0 w-full sm:static h-fit flex flex-row flex-wrap xs:flex-nowrap items-center gap-2 px-4 sm:gap-4 p-2 sm:p-4 bg-base-100 border-t">
         <input
-          value={message}
+          value={body}
+          type="text"
+          className="flex-grow input input-bordered input-sm sm:input-md bg-base-300"
           placeholder={
             isTyping
               ? `${user.username} is typing...`
@@ -259,10 +290,7 @@ const ChatView: React.FC<ChatViewProps> = ({
                   },
                 })
               );
-            } else if (
-              message.length > 0 &&
-              e.currentTarget.value.length === 0
-            ) {
+            } else if (body.length > 0 && e.currentTarget.value.length === 0) {
               dc.send(
                 JSON.stringify({
                   type: "isTyping",
@@ -273,19 +301,17 @@ const ChatView: React.FC<ChatViewProps> = ({
                 })
               );
             }
-            setMessage(e.currentTarget.value);
+            setBody(e.currentTarget.value);
           }}
-          type="text"
-          className="flex-grow input input-bordered input-sm sm:input-md"
         />
         <button
-          className="btn btn-primary btn-sm sm:btn-md"
+          className="btn btn-primary btn-sm flex-grow xs:flex-grow-0 sm:btn-md sm:w-28"
           onClick={() => send()}
         >
           Send
         </button>
       </div>
-    </>
+    </div>
   );
 };
 
@@ -307,19 +333,20 @@ const PeerView: React.FC<PeerViewProps> = ({
   const [isTyping, setIsTyping] = React.useState(false);
 
   React.useEffect(() => {
-    peer.dc!.addEventListener("message", (e) => {
+    peer.dc?.addEventListener("message", (e) => {
       const { type, data } = JSON.parse(e.data);
       if (type === "isTyping") {
         // data: {author: User, isTyping: boolean}
         setIsTyping(data.isTyping);
+      } else if (type === "message") {
+        setIsTyping(false);
       }
     });
   }, []);
 
   return (
     <div
-      className="z-50 relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg tooltip tooltip-right tooltip-accent"
-      data-tip={peer.user.username}
+      className="z-50 min-w-fit min-h-fit relative cursor-pointer bg-base-100 border p-2 rounded shadow-lg"
       onClick={() => {
         if (openChat) {
           setMessages((messages: Message[]) =>
@@ -360,6 +387,118 @@ const PeerView: React.FC<PeerViewProps> = ({
   );
 };
 
+interface UsersViewProps {
+  users: User[];
+  invitedUsers: User[];
+  sendInvite: (user: User) => void;
+  cancelInvite: (user: User) => void;
+}
+
+const UsersView: React.FC<UsersViewProps> = ({
+  users,
+  invitedUsers,
+  sendInvite,
+  cancelInvite,
+}) => {
+  const [parent] = useAutoAnimate<HTMLDivElement>();
+  const [sort, setSort] = React.useState<Sort>("asc");
+  const [query, setQuery] = React.useState("");
+
+  // https://stackoverflow.com/questions/1129216/sort-array-of-objects-by-string-property-value
+  let sortedUsers;
+  if (sort === "asc") {
+    sortedUsers = users.sort((a, b) =>
+      a.username > b.username ? 1 : b.username > a.username ? -1 : 0
+    );
+  } else {
+    sortedUsers = users.sort((a, b) =>
+      a.username < b.username ? 1 : b.username < a.username ? -1 : 0
+    );
+  }
+
+  if (query.length > 0) {
+    sortedUsers = sortedUsers.filter((u) =>
+      u.username.toLowerCase().includes(query.toLowerCase())
+    );
+  }
+
+  return (
+    <div className="flex-grow flex flex-col overflow-x-hidden">
+      <div className="min-h-fit flex flex-row flex-wrap gap-2 xs:flex-nowrap items-center xs:gap-4 p-2 sm:p-4">
+        <label className="input-group flex-grow">
+          <span className="border-2 bg-base-200 border-base-100">
+            <MdSearch size={24} className="w-4 h-4 sm:w-6 sm:h-6" />
+          </span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            type="text"
+            className="w-full input input-bordered input-sm sm:input-md"
+          />
+        </label>
+        {query.length > 0 && (
+          <button
+            className="btn btn-ghost btn-sm sm:btn-md hover:btn-primary"
+            onClick={() => setQuery("")}
+          >
+            <MdClose size={24} />
+          </button>
+        )}
+        {sort === "asc" ? (
+          <button
+            className="bg-base-200 p-1 sm:p-2 rounded border"
+            onClick={() => setSort("desc")}
+          >
+            <AiOutlineSortAscending size={24} className="sm:w-8 sm:h-8" />
+          </button>
+        ) : (
+          <button
+            className="bg-base-200 p-1 sm:p-2 rounded border"
+            onClick={() => setSort("asc")}
+          >
+            <AiOutlineSortDescending size={24} className="sm:w-8 sm:h-8" />
+          </button>
+        )}
+      </div>
+      {/* users */}
+      <div className="flex-grow w-full p-2 sm:p-4 overflow-y-auto min-h-0 overflow-x-hidden">
+        <div ref={parent} className="flex flex-col gap-4">
+          {sortedUsers.map((user) => (
+            <div
+              key={user.id}
+              className="flex flex-row flex-wrap items-center border bg-base-100 gap-4 p-2 rounded"
+            >
+              <img
+                className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                src={`https://ui-avatars.com/api/?name=${user.username}`}
+                alt={user.username}
+              />
+              <span className="flex-grow text-lg sm:text-2xl font-bold">
+                {user.username}
+              </span>
+              {invitedUsers.includes(user) ? (
+                <button
+                  className="flex-grow  ml-auto btn btn-secondary btn-sm sm:btn-md"
+                  onClick={() => cancelInvite(user)}
+                >
+                  Cancel invite
+                </button>
+              ) : (
+                <button
+                  className="flex-grow ml-auto btn btn-primary btn-sm sm:btn-md"
+                  onClick={() => sendInvite(user)}
+                >
+                  Invite to chat
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface HomeViewProps {
   me: User;
   socket: WebSocket;
@@ -367,17 +506,16 @@ interface HomeViewProps {
 
 const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [users, setUsers] = React.useState<User[]>([]);
+  const [peers, setPeers] = React.useState(new Map<string, Peer>());
+
   const [invitedUsers, setInvitedUsers] = React.useState<User[]>([]);
   const [chatInvites, setChatInvites] = React.useState<User[]>([]);
+
   const [openChat, setOpenChat] = React.useState<User | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
+
   const [viewInvite, setViewInvite] = React.useState<User | null>(null);
   const [parent] = useAutoAnimate<HTMLDivElement>();
-  const [parent2] = useAutoAnimate<HTMLDivElement>();
-  const [sort, setSort] = React.useState<Sort>("desc");
-  const [query, setQuery] = React.useState("");
-
-  const [peers, setPeers] = React.useState(new Map<string, Peer>());
 
   React.useEffect(() => {
     socket.addEventListener("message", (e) => {
@@ -401,6 +539,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           setChatInvites((chatInvites) =>
             chatInvites.filter((c) => c.id !== data.user.id)
           );
+          setViewInvite(null);
           break;
         default:
           break;
@@ -602,6 +741,10 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     let peer = peers.get(userID);
     if (!peer) return;
 
+    if (openChat?.id === userID) {
+      setOpenChat(null);
+    }
+
     peer.dc?.close();
     peer.dc = undefined;
     peer.pc.onicecandidate = null;
@@ -687,255 +830,130 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     setViewInvite(null);
   };
 
-  const sendMessage = (userID: string, message: Message) => {
-    peers
-      .get(userID)
-      ?.dc?.send(JSON.stringify({ type: "message", data: message }));
-    setMessages((messages) => [...messages, message]);
-  };
-
-  // https://stackoverflow.com/questions/1129216/sort-array-of-objects-by-string-property-value
-  let sortedUsers;
-  if (sort === "asc") {
-    sortedUsers = users.sort((a, b) =>
-      a.username > b.username ? 1 : b.username > a.username ? -1 : 0
-    );
-  } else {
-    sortedUsers = users.sort((a, b) =>
-      a.username < b.username ? 1 : b.username < a.username ? -1 : 0
-    );
-  }
-
-  if (query.length > 0) {
-    sortedUsers = sortedUsers.filter((u) =>
-      u.username.toLowerCase().includes(query.toLowerCase())
-    );
-  }
-
   return (
     <>
       {/* modals */}
       <input type="checkbox" id="handleInvite" className="modal-toggle" />
       <label htmlFor="handleInvite" className="modal bg-base-300 bg-opacity-60">
-        {viewInvite && (
-          <label
-            className="modal-box flex flex-col items-center gap-8"
-            htmlFor=""
-          >
-            <p className="text-lg text-center">
-              <span className="font-bold">{viewInvite.username}</span> sent you
-              a chat invitation!
-            </p>
-            <div className="flex flex-row items-center gap-8">
-              <button className="" onClick={() => rejectInvite(viewInvite)}>
-                Reject
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => acceptInvite(viewInvite)}
-              >
-                Accept
-              </button>
-            </div>
-          </label>
-        )}
+        <label
+          className="modal-box flex flex-col items-center gap-8"
+          htmlFor=""
+        >
+          {viewInvite ? (
+            <>
+              <p className="text-lg text-center">
+                <span className="font-bold">{viewInvite.username}</span> sent
+                you a chat invitation!
+              </p>
+              <div className="flex flex-row items-center gap-8">
+                <button className="" onClick={() => rejectInvite(viewInvite)}>
+                  Reject
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => acceptInvite(viewInvite)}
+                >
+                  Accept
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>Invite has been cancelled.</p>
+              <p>Click anywhere to exit.</p>
+            </>
+          )}
+        </label>
       </label>
 
-      <div className="h-screen flex flex-col">
-        <header className="navbar h-16 border-b bg-base-200">
+      <div className="h-screen flex flex-col bg-base-300">
+        <header className="navbar h-16 border-b">
           <div className="navbar-start"></div>
           <div className="navbar-center">
             <span className="text-xl">Loquor</span>
           </div>
           <div className="navbar-end">
             <img
-              className="rounded w-12 h-12"
+              className="rounded w-10 h-10"
               src={`https://ui-avatars.com/api/?name=${me.username}`}
               alt="Me"
             />
           </div>
         </header>
 
-        <main className="w-full border-b p-4 shadow-inner">
+        <main className="w-full border-b p-4">
           <h1 className="text-center">
             Chat with others...{" "}
             <span className="font-semibold">privately!</span>
           </h1>
         </main>
 
-        <div className="flex-grow flex flex-row overflow-y-auto min-h-0">
+        <div className="flex-grow flex flex-col sm:flex-row overflow-y-auto min-h-0">
           {/* chats */}
-          <div className="min-w-[80px] sm:min-w-[100px] flex flex-col border-r">
-            <div className="h-16 flex flex-col items-center justify-center">
+          <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:px-0 border-b sm:border-r gap-2 sm:gap-4">
+            <div className="w-fit px-4 h-16 flex flex-col items-center justify-center">
               <SiGooglechat size={32} className="w-6 h-6 sm:w-8 sm:h-8" />
             </div>
             {/* chat invites */}
             <div
-              ref={parent2}
-              className="flex flex-col items-center gap-4 py-4"
+              ref={parent}
+              className="w-full h-full flex flex-row sm:flex-col items-center gap-4 overflow-x-auto overflow-y-hidden p-2 sm:overflow-y-auto sm:overflow-x-hidden"
             >
-              <>
-                {chatInvites.map((u) => (
-                  <label
-                    key={u.id}
-                    className="relative cursor-pointer bg-base-200 border p-2 rounded shadow-lg"
-                    htmlFor="handleInvite"
-                    onClick={() => setViewInvite(u)}
-                  >
-                    <span
-                      className="z-50 absolute -top-0.5 -right-0.5 badge rounded-full px-[2px] py-[4px] flex items-center justify-center tooltip tooltip-right"
-                      data-tip={`Invitation from ${u.username}`}
-                    >
-                      <HiUserAdd size={16} />
-                    </span>
-                    <img
-                      className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                      src={`https://ui-avatars.com/api/?name=${u.username}`}
-                      alt={u.username}
+              {chatInvites.map((u) => (
+                <label
+                  key={u.id}
+                  className="relative min-w-fit min-h-fit cursor-pointer bg-base-100 border p-2 rounded"
+                  htmlFor="handleInvite"
+                  onClick={() => setViewInvite(u)}
+                >
+                  <span className="z-50 absolute -top-0.5 -right-0.5 badge rounded-full px-[2px] py-[4px] flex items-center justify-center">
+                    <HiUserAdd size={16} />
+                  </span>
+                  <img
+                    className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                    src={`https://ui-avatars.com/api/?name=${u.username}`}
+                    alt={u.username}
+                  />
+                </label>
+              ))}
+              {/* open chats */}
+              {Array.from(peers).map(
+                ([k, v]) =>
+                  v.dc?.readyState === "open" &&
+                  k !== openChat?.id && (
+                    <PeerView
+                      key={k}
+                      messages={messages}
+                      openChat={openChat}
+                      setOpenChat={setOpenChat}
+                      setMessages={setMessages}
+                      peer={v}
                     />
-                  </label>
-                ))}
-                {/* open chats */}
-                {Array.from(peers).map(
-                  ([k, v]) =>
-                    v.dc?.readyState === "open" &&
-                    k !== openChat?.id && (
-                      <PeerView
-                        key={k}
-                        messages={messages}
-                        openChat={openChat}
-                        setOpenChat={setOpenChat}
-                        setMessages={setMessages}
-                        peer={v}
-                      />
-                    )
-                )}
-              </>
+                  )
+              )}
             </div>
           </div>
           {openChat && peers.get(openChat.id)?.dc?.readyState === "open" ? (
-            <div className="flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden">
-              {/* current chat header */}
-              <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-200 border-b">
-                <img
-                  className="rounded w-8 h-8 sm:w-10 sm:h-10"
-                  src={`https://ui-avatars.com/api/?name=${openChat.username}`}
-                  alt={openChat.username}
-                />
-                <span className="text-lg sm:text-2xl font-bold">
-                  {openChat.username}
-                </span>
-                <div className="ml-auto flex flex-row items-center gap-2">
-                  <button
-                    className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
-                    onClick={() => {
-                      setMessages((messages) =>
-                        messages.map((m) =>
-                          m.author.id !== openChat.id ? m : { ...m, read: true }
-                        )
-                      );
-                      setOpenChat(null);
-                    }}
-                  >
-                    <MdClose size={24} />
-                  </button>
-                  <button
-                    className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
-                    onClick={() => removePeer(openChat.id)}
-                  >
-                    <MdOutlineExitToApp size={24} />
-                  </button>
-                </div>
-              </div>
-              <ChatView
-                me={me}
-                user={openChat}
-                messages={messages}
-                sendMessage={sendMessage}
-                dc={peers.get(openChat.id)?.dc!}
-              />
-            </div>
+            <ChatView
+              me={me}
+              user={openChat}
+              messages={messages}
+              removePeer={removePeer}
+              setMessages={setMessages}
+              setOpenChat={setOpenChat}
+              dc={peers.get(openChat.id)?.dc!}
+            />
           ) : (
-            <div className="flex-grow flex flex-col overflow-x-hidden">
-              <div className="h-16 flex flex-row items-center gap-4 px-4">
-                <label className="input-group">
-                  <span className="">
-                    <MdSearch size={24} className="w-4 h-4 sm:w-6 sm:h-6" />
-                  </span>
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.currentTarget.value)}
-                    type="text"
-                    className="flex-grow input input-bordered input-sm sm:input-md"
-                  />
-                </label>
-                {query.length > 0 && (
-                  <button
-                    className="btn btn-ghost btn-sm sm:btn-md hover:btn-primary"
-                    onClick={() => setQuery("")}
-                  >
-                    <MdClose size={24} />
-                  </button>
-                )}
-                {sort === "asc" ? (
-                  <button className="" onClick={() => setSort("desc")}>
-                    <AiOutlineSortAscending
-                      size={24}
-                      className="sm:w-8 sm:h-8"
-                    />
-                  </button>
-                ) : (
-                  <button className="" onClick={() => setSort("asc")}>
-                    <AiOutlineSortDescending
-                      size={24}
-                      className="sm:w-8 sm:h-8"
-                    />
-                  </button>
-                )}
-              </div>
-              {/* users */}
-              <div className="flex-grow w-full p-2 sm:p-4 overflow-y-auto min-h-0 overflow-x-hidden">
-                <div ref={parent} className="flex flex-col gap-4">
-                  {sortedUsers.map(
-                    (user) =>
-                      user.id !== me.id &&
-                      !(peers.get(user.id)?.dc?.readyState === "open") && (
-                        <div
-                          key={user.id}
-                          className="flex flex-row flex-wrap items-center border bg-base-200 gap-4 p-2 rounded shadow-lg"
-                        >
-                          <img
-                            className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                            src={`https://ui-avatars.com/api/?name=${user.username}`}
-                            alt={user.username}
-                          />
-                          <span
-                            className="text-lg sm:text-2xl font-bold tooltip tooltip-right"
-                            data-tip={`ID: ${user.id}`}
-                          >
-                            {user.username}
-                          </span>
-                          {invitedUsers.includes(user) ? (
-                            <button
-                              className="ml-auto btn btn-secondary btn-sm sm:btn-md"
-                              onClick={() => cancelInvite(user)}
-                            >
-                              Cancel invite
-                            </button>
-                          ) : (
-                            <button
-                              className="ml-auto btn btn-primary btn-sm sm:btn-md"
-                              onClick={() => sendInvite(user)}
-                            >
-                              Invite to chat
-                            </button>
-                          )}
-                        </div>
-                      )
-                  )}
-                </div>
-              </div>
-            </div>
+            <UsersView
+              users={users.filter(
+                (user) =>
+                  user.id !== me.id &&
+                  !(peers.get(user.id)?.dc?.readyState === "open")
+              )}
+              invitedUsers={invitedUsers}
+              sendInvite={sendInvite}
+              cancelInvite={cancelInvite}
+            />
           )}
         </div>
       </div>
@@ -953,7 +971,35 @@ const App: React.FC = () => {
     return <LoginView setUsername={setUsername} />;
   }
 
-  if (!me || !socket) return <div>Connecting</div>;
+  if (!me || !socket)
+    return (
+      <div className="h-screen flex flex-col bg-base-300">
+        <header className="navbar h-16 border-b">
+          <div className="navbar-start"></div>
+          <div className="navbar-center">
+            <span className="text-xl">Loquor</span>
+          </div>
+          <div className="navbar-end">
+            <img
+              className="rounded w-10 h-10"
+              src={`https://ui-avatars.com/api/?name=?`}
+              alt="Me"
+            />
+          </div>
+        </header>
+
+        <main className="w-full border-b p-4">
+          <h1 className="text-center">
+            Chat with others...{" "}
+            <span className="font-semibold">privately!</span>
+          </h1>
+        </main>
+
+        <div className="flex-grow flex flex-col items-center justify-center">
+          <Loader size={"xl"} variant="oval" color="green" />
+        </div>
+      </div>
+    );
 
   return <HomeView me={me} socket={socket} />;
 };
