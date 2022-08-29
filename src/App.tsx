@@ -426,7 +426,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               .createOffer()
               .then((offer) => peer?.pc.setLocalDescription(offer))
               .then(() => {
-                console.log("offer created");
                 socket.send(
                   JSON.stringify({
                     type: "offer",
@@ -441,7 +440,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               .catch((error) =>
                 console.log("error while creating offer ", error)
               );
-            setPeers(peers.set(data.from.id, peer));
             setInvitedUsers((users) =>
               users.filter((user) => user.id !== data.from.id)
             );
@@ -457,16 +455,11 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           peer = peers.get(data.from);
           if (!peer) return;
 
-          console.log("added ice candidate");
-
           peer.pc.addIceCandidate(data.candidate);
-          setPeers(peers.set(data.from, peer));
           break;
         case "offer":
           peer = peers.get(data.from);
           if (!peer) return;
-
-          console.log("received an offer");
 
           peer.pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
@@ -491,20 +484,16 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             .catch((error) =>
               console.log("Caught an error while creating an answer", error)
             );
-          setPeers(peers.set(data.from, peer));
           break;
         case "answer":
           peer = peers.get(data.from);
           if (!peer) return;
-
-          console.log("received an answer");
 
           peer.pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
             .catch((error) =>
               console.log("Caught an error while setting: answer", error)
             );
-          setPeers(peers.set(data.from, peer));
           break;
         default:
           break;
@@ -558,7 +547,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     peer.pc.onicecandidate = (e) => handleOnIceCandidate(e, user.id);
 
     if (host) {
-      console.log("created data channel");
       peer.dc = peer.pc.createDataChannel(cuid());
 
       peer.dc.onopen = () => {
@@ -569,19 +557,17 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             )
           );
         }
-        setOpenChat(user);
+        setPeers(new Map(peers));
       };
       peer.dc.onmessage = (e) => {
         const { type, data } = JSON.parse(e.data);
         if (type === "message") setMessages((messages) => [...messages, data]);
       };
       peer.dc.onclose = () => {
-        setOpenChat(null);
         removePeer(user.id);
         toast(`Chat with ${user.username} has been terminated`);
       };
     } else {
-      console.log("waiting on data channel");
       peer.pc.ondatachannel = (e) => {
         peer.dc = e.channel;
 
@@ -593,7 +579,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               )
             );
           }
-          setOpenChat(user);
+          setPeers(new Map(peers));
         };
         peer.dc.onmessage = (e) => {
           const { type, data } = JSON.parse(e.data);
@@ -601,18 +587,15 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             setMessages((messages) => [...messages, data]);
         };
         peer.dc.onclose = () => {
-          setOpenChat(null);
           removePeer(user.id);
           toast(`Chat with ${user.username} has been terminated`);
         };
 
         peers.set(user.id, peer);
-        setPeers(peers);
       };
     }
 
     peers.set(user.id, peer);
-    setPeers(peers);
   };
 
   const removePeer = (userID: string) => {
@@ -632,6 +615,16 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const sendInvite = (user: User) => {
     if (invitedUsers.includes(user)) return;
 
+    let invited = false;
+    chatInvites.forEach((u) => {
+      if (u.id === user.id) {
+        toast(`${user.username} has invited you already`);
+        invited = true;
+      }
+    });
+    if (invited) return;
+
+    createPeer(user, true);
     socket.send(
       JSON.stringify({
         type: "chatInvite",
@@ -641,8 +634,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         },
       })
     );
-
-    createPeer(user, true);
     setInvitedUsers((users) => [...users, user]);
   };
 
@@ -807,7 +798,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 {/* open chats */}
                 {Array.from(peers).map(
                   ([k, v]) =>
-                    v.dc &&
+                    v.dc?.readyState === "open" &&
                     k !== openChat?.id && (
                       <PeerView
                         key={k}
@@ -822,7 +813,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               </>
             </div>
           </div>
-          {openChat ? (
+          {openChat && peers.get(openChat.id)?.dc?.readyState === "open" ? (
             <div className="flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden">
               {/* current chat header */}
               <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-200 border-b">
@@ -908,10 +899,10 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   {sortedUsers.map(
                     (user) =>
                       user.id !== me.id &&
-                      !peers.get(user.id)?.dc && (
+                      !(peers.get(user.id)?.dc?.readyState === "open") && (
                         <div
                           key={user.id}
-                          className="flex flex-row flex-wrap items-center border bg-base-200 gap-4 p-2 sm:p-4 rounded shadow-lg"
+                          className="flex flex-row flex-wrap items-center border bg-base-200 gap-4 p-2 rounded shadow-lg"
                         >
                           <img
                             className="rounded w-8 h-8 sm:w-12 sm:h-12"
