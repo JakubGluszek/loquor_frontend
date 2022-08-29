@@ -2,9 +2,9 @@
 
 ## TODOS
 
-- [ ] "User is typing..."
+- [x] "User is typing..." kudos to danyelsalym for the idea
 - [ ] Notifications ??
-- [ ] Settings section
+- [ ] Settings section ??
   - [ ] Store settings in local storage
 
 ## TODOS +

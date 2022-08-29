@@ -11,7 +11,6 @@ import cuid from "cuid";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { formatDistance } from "date-fns";
 import { Loader } from "@mantine/core";
-import { STUN_SERVERS } from "./stun_servers";
 
 const WEBSOCKET_URL = import.meta.env.VITE_WS_SERVER;
 
@@ -378,12 +377,9 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [sort, setSort] = React.useState<Sort>("desc");
   const [query, setQuery] = React.useState("");
 
-  const [peers, setPeers] = React.useState<{
-    [userID: string]: Peer;
-  }>({});
+  const [peers, setPeers] = React.useState(new Map<string, Peer>());
 
   React.useEffect(() => {
-    socket.send(JSON.stringify({ type: "getUsers", data: {} }));
     socket.addEventListener("message", (e) => {
       const { type, data }: EventData = JSON.parse(e.data);
 
@@ -410,66 +406,45 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           break;
       }
     });
+    socket.send(JSON.stringify({ type: "getUsers", data: {} }));
   }, []);
 
   React.useEffect(() => {
     socket.addEventListener("message", (e) => {
       const { type, data }: EventData = JSON.parse(e.data);
+      let peer: Peer | undefined;
 
       switch (type) {
         case "chatInviteRes":
           if (data.response === true) {
-            if (!peers[data.from.id]) return;
+            let peer = peers.get(data.from.id);
+            if (!peer) return;
+
             toast("Chat offer accepted");
-            setInvitedUsers((users) =>
-              users.filter((user) => user.id !== data.from.id)
-            );
 
-            peers[data.from.id].dc = peers[data.from.id].pc.createDataChannel(
-              cuid()
-            );
-
-            peers[data.from.id].dc!.onopen = () => {
-              if (openChat) {
-                setMessages((messages) =>
-                  messages.map((m) =>
-                    m.author.id !== openChat.id ? m : { ...m, read: true }
-                  )
-                );
-              }
-              setOpenChat(data.from);
-            };
-            peers[data.from.id].dc!.onmessage = (e) => {
-              const { type, data } = JSON.parse(e.data);
-              if (type === "message")
-                setMessages((messages) => [...messages, data]);
-            };
-            peers[data.from.id].dc!.onclose = () => {
-              setOpenChat(null);
-              removePeer(data.from.id);
-              toast(`Chat with ${data.from.username} has been terminated`);
-            };
-
-            peers[data.from.id].pc
+            peer.pc
               .createOffer()
-              .then((offer) =>
-                peers[data.from.id].pc.setLocalDescription(offer)
-              )
-              .then(() =>
+              .then((offer) => peer?.pc.setLocalDescription(offer))
+              .then(() => {
+                console.log("offer created");
                 socket.send(
                   JSON.stringify({
                     type: "offer",
                     data: {
                       from: me.id,
                       target: data.from.id,
-                      description: peers[data.from.id].pc.localDescription,
+                      description: peer?.pc.localDescription,
                     },
                   })
-                )
-              )
+                );
+              })
               .catch((error) =>
-                console.log("Error while creating offer", error)
+                console.log("error while creating offer ", error)
               );
+            setPeers(peers.set(data.from.id, peer));
+            setInvitedUsers((users) =>
+              users.filter((user) => user.id !== data.from.id)
+            );
           } else {
             toast(`${data.from.username} rejected your chat offer :(`);
             removePeer(data.from.id);
@@ -479,19 +454,28 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           }
           break;
         case "ice-candidate":
-          if (!peers[data.from]) return;
-          peers[data.from].pc.addIceCandidate(data.candidate);
+          peer = peers.get(data.from);
+          if (!peer) return;
+
+          console.log("added ice candidate");
+
+          peer.pc.addIceCandidate(data.candidate);
+          setPeers(peers.set(data.from, peer));
           break;
         case "offer":
-          if (!peers[data.from]) return;
-          peers[data.from].pc
+          peer = peers.get(data.from);
+          if (!peer) return;
+
+          console.log("received an offer");
+
+          peer.pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
             .catch((error) =>
               console.log("Caught an error while setting: offer", error)
             );
-          peers[data.from].pc
+          peer.pc
             .createAnswer()
-            .then((answer) => peers[data.from].pc.setLocalDescription(answer))
+            .then((answer) => peer?.pc.setLocalDescription(answer))
             .then(() =>
               socket.send(
                 JSON.stringify({
@@ -499,7 +483,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   data: {
                     from: me.id,
                     target: data.from,
-                    description: peers[data.from].pc.localDescription,
+                    description: peer?.pc.localDescription,
                   },
                 })
               )
@@ -507,14 +491,20 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             .catch((error) =>
               console.log("Caught an error while creating an answer", error)
             );
+          setPeers(peers.set(data.from, peer));
           break;
         case "answer":
-          if (!peers[data.from]) return;
-          peers[data.from].pc
+          peer = peers.get(data.from);
+          if (!peer) return;
+
+          console.log("received an answer");
+
+          peer.pc
             .setRemoteDescription(new RTCSessionDescription(data.description))
             .catch((error) =>
               console.log("Caught an error while setting: answer", error)
             );
+          setPeers(peers.set(data.from, peer));
           break;
         default:
           break;
@@ -522,41 +512,80 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     });
   }, [peers]);
 
+  const handleOnIceCandidate = (
+    { candidate }: RTCPeerConnectionIceEvent,
+    target: string
+  ) => {
+    if (!candidate) return;
+
+    socket.send(
+      JSON.stringify({
+        type: "ice-candidate",
+        data: {
+          from: me.id,
+          target: target,
+          candidate: candidate,
+        },
+      })
+    );
+  };
+
   const createPeer = (user: User, host: boolean) => {
     let peer: Peer = {
       pc: new RTCPeerConnection({
         iceServers: [
           {
-            urls: import.meta.env.VITE_STUN_SERVER,
-            username: import.meta.env.VITE_STUN_USERNAME,
-            credential: import.meta.env.VITE_STUN_CREDENTIAL,
-            credentialType: "password",
+            urls: "stun:openrelay.metered.ca:80",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject",
           },
         ],
+        iceTransportPolicy: "all",
       }),
       host,
       user,
       dc: undefined,
     };
 
-    peer.pc.onicecandidate = (e) => {
-      socket.send(
-        JSON.stringify({
-          type: "ice-candidate",
-          data: {
-            from: me.id,
-            target: user.id,
-            candidate: e.candidate,
-          },
-        })
-      );
-    };
+    peer.pc.onicecandidate = (e) => handleOnIceCandidate(e, user.id);
 
-    if (!host) {
+    if (host) {
+      console.log("created data channel");
+      peer.dc = peer.pc.createDataChannel(cuid());
+
+      peer.dc.onopen = () => {
+        if (openChat) {
+          setMessages((messages) =>
+            messages.map((m) =>
+              m.author.id !== openChat.id ? m : { ...m, read: true }
+            )
+          );
+        }
+        setOpenChat(user);
+      };
+      peer.dc.onmessage = (e) => {
+        const { type, data } = JSON.parse(e.data);
+        if (type === "message") setMessages((messages) => [...messages, data]);
+      };
+      peer.dc.onclose = () => {
+        setOpenChat(null);
+        removePeer(user.id);
+        toast(`Chat with ${user.username} has been terminated`);
+      };
+    } else {
+      console.log("waiting on data channel");
       peer.pc.ondatachannel = (e) => {
-        let dc = e.channel;
+        peer.dc = e.channel;
 
-        dc.onopen = () => {
+        peer.dc.onopen = () => {
           if (openChat) {
             setMessages((messages) =>
               messages.map((m) =>
@@ -566,36 +595,38 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           }
           setOpenChat(user);
         };
-        dc.onmessage = (e) => {
+        peer.dc.onmessage = (e) => {
           const { type, data } = JSON.parse(e.data);
           if (type === "message")
             setMessages((messages) => [...messages, data]);
         };
-        dc.onclose = () => {
+        peer.dc.onclose = () => {
           setOpenChat(null);
           removePeer(user.id);
           toast(`Chat with ${user.username} has been terminated`);
         };
 
-        setPeers((peers) =>
-          Object.assign(peers, { [user.id]: { ...peers[user.id], dc: dc } })
-        );
+        peers.set(user.id, peer);
+        setPeers(peers);
       };
     }
 
-    setPeers((peers) => Object.assign(peers, { [user.id]: peer }));
+    peers.set(user.id, peer);
+    setPeers(peers);
   };
 
   const removePeer = (userID: string) => {
-    if (!peers[userID]) return;
-    peers[userID]?.dc?.close();
-    peers[userID].dc = undefined;
-    peers[userID].pc.onicecandidate = null;
-    delete peers[userID];
+    let peer = peers.get(userID);
+    if (!peer) return;
+
+    peer.dc?.close();
+    peer.dc = undefined;
+    peer.pc.onicecandidate = null;
+    peers.delete(userID);
+
     setMessages((messages) =>
       messages.filter((m) => m.author.id !== userID && m.target.id !== userID)
     );
-    setPeers(peers);
   };
 
   const sendInvite = (user: User) => {
@@ -633,7 +664,6 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const acceptInvite = (user: User) => {
     createPeer(user, false);
-    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
 
     socket.send(
       JSON.stringify({
@@ -645,12 +675,12 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         },
       })
     );
+
+    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
     setViewInvite(null);
   };
 
   const rejectInvite = (user: User) => {
-    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
-
     socket.send(
       JSON.stringify({
         type: "chatInviteRes",
@@ -662,11 +692,14 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
       })
     );
 
+    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
     setViewInvite(null);
   };
 
   const sendMessage = (userID: string, message: Message) => {
-    peers[userID].dc?.send(JSON.stringify({ type: "message", data: message }));
+    peers
+      .get(userID)
+      ?.dc?.send(JSON.stringify({ type: "message", data: message }));
     setMessages((messages) => [...messages, message]);
   };
 
@@ -772,7 +805,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   </label>
                 ))}
                 {/* open chats */}
-                {Object.entries(peers).map(
+                {Array.from(peers).map(
                   ([k, v]) =>
                     v.dc &&
                     k !== openChat?.id && (
@@ -828,7 +861,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 user={openChat}
                 messages={messages}
                 sendMessage={sendMessage}
-                dc={peers[openChat.id].dc!}
+                dc={peers.get(openChat.id)?.dc!}
               />
             </div>
           ) : (
@@ -875,7 +908,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                   {sortedUsers.map(
                     (user) =>
                       user.id !== me.id &&
-                      !peers[user.id]?.dc && (
+                      !peers.get(user.id)?.dc && (
                         <div
                           key={user.id}
                           className="flex flex-row flex-wrap items-center border bg-base-200 gap-4 p-2 sm:p-4 rounded shadow-lg"
