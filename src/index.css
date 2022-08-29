@@ -15,7 +15,7 @@
 
   /* Handle */
   ::-webkit-scrollbar-thumb {
-    @apply bg-neutral;
+    @apply bg-base-200;
   }
 
   /* Handle on hover */

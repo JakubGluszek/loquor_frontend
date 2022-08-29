@@ -1,11 +1,13 @@
 /** @type {import('tailwindcss').Config} */
+
+const { screens } = require("tailwindcss/defaultTheme");
+
 module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
-    extend: {
-      screens: {
-        xs: "360px",
-      },
+    screens: {
+      xs: "360px",
+      ...screens,
     },
   },
   plugins: [require("daisyui"), require("tailwind-scrollbar-hide")],
@@ -18,7 +20,7 @@ module.exports = {
           secondary: "#034a1d",
           accent: "#f3f4f6",
           neutral: "#375702",
-          "base-100": "#10362b",
+          "base-100": "#222b36",
           info: "#3ABFF8",
           success: "#36D399",
           warning: "#FBBD23",

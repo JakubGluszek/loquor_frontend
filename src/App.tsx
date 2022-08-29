@@ -38,7 +38,7 @@ interface Peer {
   dc?: RTCDataChannel;
 }
 
-type Sort = "asc" | "desc" | null;
+type Sort = "asc" | "desc";
 
 interface EventUser {
   type: "me" | "setUser" | "addUser" | "removeUser";
@@ -179,6 +179,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const container = React.useRef<HTMLDivElement>(null);
 
   const send = () => {
+    if (body.length === 0) return;
     const message = {
       author: me,
       target: user,
@@ -209,16 +210,18 @@ const ChatView: React.FC<ChatViewProps> = ({
   return (
     <div className="flex-grow flex flex-col overflow-y-hidden min-h-0 overflow-x-hidden text-xs xs:text-base">
       {/* current chat header */}
-      <div className="min-h-16 flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-100 border-b">
+      <div className="h-fit flex flex-row items-center flex-wrap gap-4 p-2 px-4 bg-base-100 border-b">
         <img
           className="rounded w-8 h-8 sm:w-10 sm:h-10"
           src={`https://ui-avatars.com/api/?name=${user.username}`}
           alt={user.username}
         />
-        <span className="text-lg sm:text-2xl font-bold">{user.username}</span>
-        <div className="ml-auto flex flex-row items-center gap-2">
+        <span className="text-sm xs:text-lg sm:text-2xl font-bold text-accent">
+          {user.username}
+        </span>
+        <div className="xs:ml-auto flex-grow xs:flex-grow-0 flex flex-row flex-row-wrap xs:flex-nowrap items-center gap-2">
           <button
-            className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+            className="flex-grow xs:flex-grow-0 btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
             onClick={() => {
               setMessages((messages) =>
                 messages.map((m) =>
@@ -231,7 +234,7 @@ const ChatView: React.FC<ChatViewProps> = ({
             <MdClose size={24} />
           </button>
           <button
-            className="btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
+            className="flex-grow xs:flex-grow-0 btn btn-ghost hover:btn-primary btn-sm sm:btn-md"
             onClick={() => removePeer(user.id)}
           >
             <MdOutlineExitToApp size={24} />
@@ -240,7 +243,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       </div>
       <div
         ref={container}
-        className="mb-16 sm:mb-0 flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden"
+        className="mb-[105px] xs:mb-[64px] sm:mb-[0px] flex-grow flex flex-col overflow-y-auto min-h-0 overflow-x-hidden"
       >
         {messages
           .filter((m) => m.author.id === user.id || m.target.id === user.id)
@@ -255,20 +258,27 @@ const ChatView: React.FC<ChatViewProps> = ({
                 alt={m.author.username}
               />
               <div className="flex flex-col gap-2">
-                <div className="flex flex-row items-center gap-2">
-                  <span className="text-lg font-bold">{m.author.username}</span>
-                  <span className="text-sm opacity-60">
+                <div className="flex flex-row items-center gap-4">
+                  <span
+                    className={`text-base xs:text-lg font-bold ${
+                      m.author.id === me.id ? "text-primary" : "text-accent"
+                    }`}
+                  >
+                    {m.author.username}
+                  </span>
+                  <span className="text-xs xs:text-sm opacity-60">
                     {formatDistance(new Date(), new Date(m.timestamp), {
                       includeSeconds: true,
-                    })}
+                    })}{" "}
+                    ago
                   </span>
                 </div>
-                <p className="">{m.body}</p>
+                <p className="font-mono">{m.body}</p>
               </div>
             </div>
           ))}
       </div>
-      <div className="fixed bottom-0 w-full sm:static h-fit flex flex-row flex-wrap xs:flex-nowrap items-center gap-2 px-4 sm:gap-4 p-2 sm:p-4 bg-base-100 border-t">
+      <div className="fixed bottom-0 w-full sm:static h-fit flex flex-row flex-wrap xs:flex-nowrap items-center gap-2 sm:gap-4 p-4 border-t">
         <input
           value={body}
           type="text"
@@ -425,6 +435,7 @@ const UsersView: React.FC<UsersViewProps> = ({
   return (
     <div className="flex-grow flex flex-col overflow-x-hidden">
       <div className="min-h-fit flex flex-row flex-wrap gap-2 xs:flex-nowrap items-center xs:gap-4 p-2 sm:p-4">
+        {/* filter by username */}
         <label className="input-group flex-grow">
           <span className="border-2 bg-base-200 border-base-100">
             <MdSearch size={24} className="w-4 h-4 sm:w-6 sm:h-6" />
@@ -436,6 +447,7 @@ const UsersView: React.FC<UsersViewProps> = ({
             className="w-full input input-bordered input-sm sm:input-md"
           />
         </label>
+        {/* close search view */}
         {query.length > 0 && (
           <button
             className="btn btn-ghost btn-sm sm:btn-md hover:btn-primary"
@@ -444,6 +456,7 @@ const UsersView: React.FC<UsersViewProps> = ({
             <MdClose size={24} />
           </button>
         )}
+        {/* sort by username */}
         {sort === "asc" ? (
           <button
             className="bg-base-200 p-1 sm:p-2 rounded border"
@@ -478,14 +491,14 @@ const UsersView: React.FC<UsersViewProps> = ({
               </span>
               {invitedUsers.includes(user) ? (
                 <button
-                  className="flex-grow  ml-auto btn btn-secondary btn-sm sm:btn-md"
+                  className="flex-grow xs:flex-grow-0 ml-auto btn btn-secondary btn-sm sm:btn-md"
                   onClick={() => cancelInvite(user)}
                 >
                   Cancel invite
                 </button>
               ) : (
                 <button
-                  className="flex-grow ml-auto btn btn-primary btn-sm sm:btn-md"
+                  className="flex-grow xs:flex-grow-0 ml-auto btn btn-primary btn-sm sm:btn-md"
                   onClick={() => sendInvite(user)}
                 >
                   Invite to chat
@@ -507,17 +520,16 @@ interface HomeViewProps {
 const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [users, setUsers] = React.useState<User[]>([]);
   const [peers, setPeers] = React.useState(new Map<string, Peer>());
-
   const [invitedUsers, setInvitedUsers] = React.useState<User[]>([]);
   const [chatInvites, setChatInvites] = React.useState<User[]>([]);
-
-  const [openChat, setOpenChat] = React.useState<User | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
-
+  // UI related
+  const [openChat, setOpenChat] = React.useState<User | null>(null);
   const [viewInvite, setViewInvite] = React.useState<User | null>(null);
   const [parent] = useAutoAnimate<HTMLDivElement>();
 
   React.useEffect(() => {
+    // user related events
     socket.addEventListener("message", (e) => {
       const { type, data }: EventData = JSON.parse(e.data);
 
@@ -549,6 +561,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   }, []);
 
   React.useEffect(() => {
+    // WebRTC related events
     socket.addEventListener("message", (e) => {
       const { type, data }: EventData = JSON.parse(e.data);
       let peer: Peer | undefined;
@@ -658,6 +671,27 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     );
   };
 
+  const handleDataChannelOnOpen = () => {
+    if (openChat) {
+      setMessages((messages) =>
+        messages.map((m) =>
+          m.author.id !== openChat.id ? m : { ...m, read: true }
+        )
+      );
+    }
+    setPeers(new Map(peers));
+  };
+
+  const handleDataChannelOnMessage = (e: MessageEvent) => {
+    const { type, data } = JSON.parse(e.data);
+    if (type === "message") setMessages((messages) => [...messages, data]);
+  };
+
+  const handleDataChannelOnClose = (user: User) => {
+    removePeer(user.id);
+    toast(`Chat with ${user.username} has been terminated`);
+  };
+
   const createPeer = (user: User, host: boolean) => {
     let peer: Peer = {
       pc: new RTCPeerConnection({
@@ -688,49 +722,16 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     if (host) {
       peer.dc = peer.pc.createDataChannel(cuid());
 
-      peer.dc.onopen = () => {
-        if (openChat) {
-          setMessages((messages) =>
-            messages.map((m) =>
-              m.author.id !== openChat.id ? m : { ...m, read: true }
-            )
-          );
-        }
-        setPeers(new Map(peers));
-      };
-      peer.dc.onmessage = (e) => {
-        const { type, data } = JSON.parse(e.data);
-        if (type === "message") setMessages((messages) => [...messages, data]);
-      };
-      peer.dc.onclose = () => {
-        removePeer(user.id);
-        toast(`Chat with ${user.username} has been terminated`);
-      };
+      peer.dc.onopen = handleDataChannelOnOpen;
+      peer.dc.onmessage = handleDataChannelOnMessage;
+      peer.dc.onclose = () => handleDataChannelOnClose(user);
     } else {
       peer.pc.ondatachannel = (e) => {
         peer.dc = e.channel;
 
-        peer.dc.onopen = () => {
-          if (openChat) {
-            setMessages((messages) =>
-              messages.map((m) =>
-                m.author.id !== openChat.id ? m : { ...m, read: true }
-              )
-            );
-          }
-          setPeers(new Map(peers));
-        };
-        peer.dc.onmessage = (e) => {
-          const { type, data } = JSON.parse(e.data);
-          if (type === "message")
-            setMessages((messages) => [...messages, data]);
-        };
-        peer.dc.onclose = () => {
-          removePeer(user.id);
-          toast(`Chat with ${user.username} has been terminated`);
-        };
-
-        peers.set(user.id, peer);
+        peer.dc.onopen = handleDataChannelOnOpen;
+        peer.dc.onmessage = handleDataChannelOnMessage;
+        peer.dc.onclose = () => handleDataChannelOnClose(user);
       };
     }
 
@@ -859,8 +860,8 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             </>
           ) : (
             <>
-              <p>Invite has been cancelled.</p>
-              <p>Click anywhere to exit.</p>
+              <p>Whoops.. the invite just got cancelled!</p>
+              <p>(Click anywhere to exit.)</p>
             </>
           )}
         </label>
@@ -890,7 +891,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
         <div className="flex-grow flex flex-col sm:flex-row overflow-y-auto min-h-0">
           {/* chats */}
-          <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:px-0 border-b sm:border-r gap-2 sm:gap-4">
+          <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:py-4 border-b sm:border-r gap-2 sm:gap-5">
             <div className="w-fit px-4 h-16 flex flex-col items-center justify-center">
               <SiGooglechat size={32} className="w-6 h-6 sm:w-8 sm:h-8" />
             </div>
