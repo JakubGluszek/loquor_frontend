@@ -23,6 +23,8 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const [messages, setMessages] = React.useState<Message[]>([]);
   // UI related
   const [openChat, setOpenChat] = React.useState<User | null>(null);
+  const openChatState = React.useRef<User | null>();
+  openChatState.current = openChat;
   const [viewInvite, setViewInvite] = React.useState<User | null>(null);
   const [parent] = useAutoAnimate<HTMLDivElement>();
 
@@ -182,7 +184,10 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const handleDataChannelOnMessage = (e: MessageEvent) => {
     const { type, data } = JSON.parse(e.data);
-    if (type === "message") setMessages((messages) => [...messages, data]);
+    if (type === "message") {
+      console.log(openChatState);
+      setMessages((messages) => [...messages, data]);
+    }
   };
 
   const handleDataChannelOnClose = (user: User) => {
@@ -295,8 +300,8 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     setInvitedUsers((users) => users.filter((u) => u.id !== user.id));
   };
 
-  const acceptInvite = (user: User) => {
-    createPeer(user, false);
+  const handleInvite = (user: User, response: boolean) => {
+    if (response) createPeer(user, false);
 
     socket.send(
       JSON.stringify({
@@ -304,23 +309,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         data: {
           from: me,
           target: user.id,
-          response: true,
-        },
-      })
-    );
-
-    setChatInvites((invites) => invites.filter((u) => u.id !== user.id));
-    setViewInvite(null);
-  };
-
-  const rejectInvite = (user: User) => {
-    socket.send(
-      JSON.stringify({
-        type: "chatInviteRes",
-        data: {
-          from: me,
-          target: user.id,
-          response: false,
+          response,
         },
       })
     );
@@ -345,12 +334,15 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
                 you a chat invitation!
               </p>
               <div className="flex flex-row items-center gap-8">
-                <button className="" onClick={() => rejectInvite(viewInvite)}>
+                <button
+                  className=""
+                  onClick={() => handleInvite(viewInvite, false)}
+                >
                   Reject
                 </button>
                 <button
                   className="btn btn-primary"
-                  onClick={() => acceptInvite(viewInvite)}
+                  onClick={() => handleInvite(viewInvite, true)}
                 >
                   Accept
                 </button>

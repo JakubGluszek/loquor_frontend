@@ -53,7 +53,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, me }) => {
           </span>
         </div>
         <p className="font-mono">
-          {message.body.split(" ").map((word, i) => handleWord(word, i))}
+          {message.body.split(" ").map((word, i) => (
+            <span key={i}>{handleWord(word, i)}</span>
+          ))}
         </p>
       </div>
     </div>

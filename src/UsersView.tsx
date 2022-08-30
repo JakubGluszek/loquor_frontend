@@ -24,17 +24,10 @@ const UsersView: React.FC<UsersViewProps> = ({
   const [sort, setSort] = React.useState<Sort>("asc");
   const [query, setQuery] = React.useState("");
 
-  // https://stackoverflow.com/questions/1129216/sort-array-of-objects-by-string-property-value
-  let sortedUsers;
-  if (sort === "asc") {
-    sortedUsers = users.sort((a, b) =>
-      a.username > b.username ? 1 : b.username > a.username ? -1 : 0
-    );
-  } else {
-    sortedUsers = users.sort((a, b) =>
-      a.username < b.username ? 1 : b.username < a.username ? -1 : 0
-    );
-  }
+  let sortedUsers =
+    sort === "asc"
+      ? users.sort((a, b) => (a.username > b.username ? 1 : -1))
+      : users.sort((a, b) => (a.username < b.username ? 1 : -1));
 
   if (query.length > 0) {
     sortedUsers = sortedUsers.filter((u) =>
@@ -86,36 +79,40 @@ const UsersView: React.FC<UsersViewProps> = ({
       {/* users */}
       <div className="flex-grow w-full p-2 sm:p-4 overflow-y-auto min-h-0 overflow-x-hidden">
         <div ref={parent} className="flex flex-col gap-4">
-          {sortedUsers.map((user) => (
-            <div
-              key={user.id}
-              className="flex flex-row flex-wrap items-center border bg-base-100 gap-4 p-2 rounded"
-            >
-              <img
-                className="rounded w-8 h-8 sm:w-12 sm:h-12"
-                src={`https://ui-avatars.com/api/?name=${user.username}`}
-                alt={user.username}
-              />
-              <span className="flex-grow text-lg sm:text-2xl font-bold">
-                {user.username}
-              </span>
-              {invitedUsers.includes(user) ? (
-                <button
-                  className="flex-grow xs:flex-grow-0 ml-auto btn btn-secondary btn-sm sm:btn-md"
-                  onClick={() => cancelInvite(user)}
-                >
-                  Cancel invite
-                </button>
-              ) : (
-                <button
-                  className="flex-grow xs:flex-grow-0 ml-auto btn btn-primary btn-sm sm:btn-md"
-                  onClick={() => sendInvite(user)}
-                >
-                  Invite to chat
-                </button>
-              )}
-            </div>
-          ))}
+          {sortedUsers.length > 0 ? (
+            sortedUsers.map((user) => (
+              <div
+                key={user.id}
+                className="flex flex-row flex-wrap items-center border bg-base-100 gap-4 p-2 rounded"
+              >
+                <img
+                  className="rounded w-8 h-8 sm:w-12 sm:h-12"
+                  src={`https://ui-avatars.com/api/?name=${user.username}`}
+                  alt={user.username}
+                />
+                <span className="flex-grow text-lg sm:text-2xl font-bold">
+                  {user.username}
+                </span>
+                {invitedUsers.includes(user) ? (
+                  <button
+                    className="flex-grow xs:flex-grow-0 ml-auto btn btn-secondary btn-sm sm:btn-md"
+                    onClick={() => cancelInvite(user)}
+                  >
+                    Cancel invite
+                  </button>
+                ) : (
+                  <button
+                    className="flex-grow xs:flex-grow-0 ml-auto btn btn-primary btn-sm sm:btn-md"
+                    onClick={() => sendInvite(user)}
+                  >
+                    Invite to chat
+                  </button>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="flex-grow flex items-center justify-center">No other users online</div>
+          )}
         </div>
       </div>
     </div>
