@@ -1,4 +1,5 @@
 import React from "react";
+import { toast } from "react-hot-toast";
 import { User, EventData } from "./types";
 
 const WEBSOCKET_URL = import.meta.env.VITE_WS_SERVER;
@@ -20,7 +21,16 @@ const useSocketServer = ({ username, setMe }: useSocketServerArgs) => {
     socketServer.addEventListener("message", (e) => {
       const { type, data }: EventData = JSON.parse(e.data);
 
-      if (type === "me") setMe(data);
+      if (type === "me") {
+        setMe(data);
+        toast(
+          `${
+            ["Yo", "Welcome", "Wosop", "Hi", "Hello"][
+              Math.floor(Math.random() * 5)
+            ]
+          }, ${data.username} ✌🏼`
+        );
+      }
     });
 
     return () => socketServer.close();

@@ -6,6 +6,8 @@ import "./index.css";
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <>
     <App />
-    <Toaster position="top-center" />
+    <Toaster position="top-center" toastOptions={{
+      className: "bg-base-100 text-primary"
+    }} />
   </>
 );

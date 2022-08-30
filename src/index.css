@@ -5,7 +5,7 @@
 @layer base {
   /* width */
   ::-webkit-scrollbar {
-    @apply w-2;
+    @apply w-2.5;
   }
 
   /* Track */
@@ -15,12 +15,12 @@
 
   /* Handle */
   ::-webkit-scrollbar-thumb {
-    @apply bg-neutral;
+    @apply bg-accent;
   }
 
   /* Handle on hover */
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-focus;
+    @apply bg-accent-focus;
   }
 }
 

@@ -44,7 +44,7 @@ const UsersView: React.FC<UsersViewProps> = ({
 
   return (
     <div className="flex-grow flex flex-col overflow-x-hidden">
-      <div className="min-h-fit flex flex-row flex-wrap gap-2 xs:flex-nowrap items-center xs:gap-4 p-2 sm:p-4">
+      <div className="min-h-fit flex flex-row flex-wrap gap-2 xs:flex-nowrap items-center xs:gap-4 p-2 sm:p-4 animate-in slide-in-from-top-16 duration-300">
         {/* filter by username */}
         <label className="input-group flex-grow">
           <span className="border-2 bg-base-200 border-base-100">

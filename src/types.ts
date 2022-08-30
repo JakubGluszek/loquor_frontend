@@ -8,6 +8,7 @@ export interface ChatInvite {
 }
 
 export interface Message {
+  id: string;
   author: User;
   target: User;
   body: string;

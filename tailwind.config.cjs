@@ -9,8 +9,17 @@ module.exports = {
       xs: "360px",
       ...screens,
     },
+    extend: {
+      fontFamily: {
+        ubuntu: ["Ubuntu Mono", "monospace"],
+      },
+    },
   },
-  plugins: [require("daisyui"), require("tailwind-scrollbar-hide"), require("tailwindcss-animate")],
+  plugins: [
+    require("daisyui"),
+    require("tailwind-scrollbar-hide"),
+    require("tailwindcss-animate"),
+  ],
   daisyui: {
     styled: true,
     themes: [

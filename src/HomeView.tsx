@@ -70,7 +70,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             let peer = peers.get(data.from.id);
             if (!peer) return;
 
-            toast("Chat offer accepted");
+            toast(`${data.from.username} accepted your chat invite 🤝🏼`);
 
             peer.pc
               .createOffer()
@@ -94,7 +94,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
               users.filter((user) => user.id !== data.from.id)
             );
           } else {
-            toast(`${data.from.username} rejected your chat offer :(`);
+            toast(`${data.from.username} rejected your chat invite 😐️`);
             removePeer(data.from.id);
             setInvitedUsers((users) =>
               users.filter((user) => user.id !== data.from.id)
@@ -187,7 +187,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
 
   const handleDataChannelOnClose = (user: User) => {
     removePeer(user.id);
-    toast(`Chat with ${user.username} has been terminated`);
+    toast(`Chat with ${user.username} has ended 👋🏼`);
   };
 
   const createPeer = (user: User, host: boolean) => {

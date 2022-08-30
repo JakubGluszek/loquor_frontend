@@ -78,7 +78,7 @@ const PeerView: React.FC<PeerViewProps> = ({
             exit={{ opacity: 0, translateY: 0.6 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
           >
-            <Loader color="dark" variant="dots" size="sm" />
+            <Loader color="dark" variant="dots" size="xs" />
           </motion.span>
         )}
       </AnimatePresence>
