@@ -10,7 +10,7 @@ module.exports = {
       ...screens,
     },
   },
-  plugins: [require("daisyui"), require("tailwind-scrollbar-hide")],
+  plugins: [require("daisyui"), require("tailwind-scrollbar-hide"), require("tailwindcss-animate")],
   daisyui: {
     styled: true,
     themes: [
