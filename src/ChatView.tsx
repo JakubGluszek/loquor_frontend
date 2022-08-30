@@ -3,7 +3,7 @@ import cuid from "cuid";
 import { formatDistance } from "date-fns";
 import { MdClose, MdOutlineExitToApp } from "react-icons/md";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { User, Message } from "./types";
+import { User, Message, DCEventData } from "./types";
 
 interface ChatMessageProps {
   message: Message;
@@ -87,9 +87,8 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   React.useEffect(() => {
     dc.addEventListener("message", (e) => {
-      const { type, data } = JSON.parse(e.data);
+      const { type, data }: DCEventData = JSON.parse(e.data);
       if (type === "isTyping") {
-        // data: {author: User, isTyping: boolean}
         setIsTyping(data.isTyping);
       } else if (type === "message") {
         setIsTyping(false);
@@ -112,7 +111,14 @@ const ChatView: React.FC<ChatViewProps> = ({
       timestamp: new Date(),
     };
 
-    dc.send(JSON.stringify({ type: "message", data: message }));
+    dc.send(
+      JSON.stringify({
+        type: "message",
+        data: {
+          message,
+        },
+      })
+    );
     setMessages((messages) => [...messages, message]);
     setBody("");
   };
@@ -144,14 +150,7 @@ const ChatView: React.FC<ChatViewProps> = ({
           <button
             className="flex-grow xs:flex-grow-0 btn btn-ghost btn-sm sm:btn-md xs:tooltip xs:tooltip-left xs:tooltip-primary"
             data-tip="Minimize chat"
-            onClick={() => {
-              setMessages((messages) =>
-                messages.map((m) =>
-                  m.author.id !== user.id ? m : { ...m, read: true }
-                )
-              );
-              setOpenChat(null);
-            }}
+            onClick={() => setOpenChat(null)}
           >
             <MdClose size={24} />
           </button>

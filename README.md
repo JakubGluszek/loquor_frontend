@@ -6,6 +6,9 @@
 - [ ] Notifications ??
 - [ ] Settings section ??
   - [ ] Store settings in local storage
+- [ ] Handle UI state when
+  - [ ] Users list is empty
+  - [ ] ...
 
 ## TODOS +
 

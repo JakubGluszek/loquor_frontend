@@ -74,3 +74,19 @@ export type EventData =
   | EventChatRes
   | EventIceCandidate
   | EventSDPDescription;
+
+export interface DCEventMessage {
+  type: "message";
+  data: {
+    message: Message;
+  };
+}
+
+export interface DCEventIsTyping {
+  type: "isTyping";
+  data: {
+    isTyping: boolean;
+  };
+}
+
+export type DCEventData = DCEventMessage | DCEventIsTyping;

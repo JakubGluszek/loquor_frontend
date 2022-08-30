@@ -4,11 +4,20 @@ import React from "react";
 import { toast } from "react-hot-toast";
 import { HiUserAdd } from "react-icons/hi";
 import { SiGooglechat } from "react-icons/si";
+import { Howl } from "howler";
 import ChatView from "./ChatView";
 import Layout from "./Layout";
 import PeerView from "./PeerView";
-import { EventData, Message, Peer, User } from "./types";
+import { DCEventData, EventData, Message, Peer, User } from "./types";
 import UsersView from "./UsersView";
+
+var sound = new Howl({
+  src: ["/notification.mp3"],
+});
+
+const notification = () => {
+  sound.play();
+};
 
 interface HomeViewProps {
   me: User;
@@ -183,10 +192,14 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   };
 
   const handleDataChannelOnMessage = (e: MessageEvent) => {
-    const { type, data } = JSON.parse(e.data);
+    const { type, data }: DCEventData = JSON.parse(e.data);
     if (type === "message") {
-      console.log(openChatState);
-      setMessages((messages) => [...messages, data]);
+      let isInChat = openChatState.current?.id === data.message.author.id;
+      setMessages((messages) => [
+        ...messages,
+        { ...data.message, read: isInChat },
+      ]);
+      if (!isInChat) notification();
     }
   };
 
