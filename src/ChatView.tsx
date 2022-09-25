@@ -37,7 +37,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, me }) => {
         alt={message.author.username}
       />
       <div className="flex flex-col gap-2">
-        <div className="flex flex-row items-center gap-4 font-ubuntu">
+        <div className="flex flex-row items-center gap-4">
           <span
             className={`text-base xs:text-lg font-bold ${
               message.author.id === me.id ? "text-primary" : "text-accent"
@@ -52,7 +52,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, me }) => {
             ago
           </span>
         </div>
-        <p className="font-mono">
+        <p className="">
           {message.body.split(" ").map((word, i) => (
             <span key={i}>{handleWord(word, i)}</span>
           ))}
@@ -147,20 +147,22 @@ const ChatView: React.FC<ChatViewProps> = ({
           {user.username}
         </span>
         <div className="xs:ml-auto flex-grow xs:flex-grow-0 flex flex-row flex-row-wrap xs:flex-nowrap items-center gap-2">
-          <button
-            className="flex-grow xs:flex-grow-0 btn btn-ghost btn-sm sm:btn-md xs:tooltip xs:tooltip-left xs:tooltip-primary"
-            data-tip="Minimize chat"
-            onClick={() => setOpenChat(null)}
-          >
-            <MdClose size={24} />
-          </button>
-          <button
-            className="flex-grow xs:flex-grow-0 btn btn-ghost btn-sm sm:btn-md xs:tooltip xs:tooltip-left xs:tooltip-primary"
-            onClick={() => removePeer(user.id)}
-            data-tip="End chat"
-          >
-            <MdOutlineExitToApp size={24} />
-          </button>
+          <div className="xs:tooltip xs:tooltip-left" data-tip="Minimize">
+            <button
+              className="flex-grow xs:flex-grow-0 btn btn-ghost btn-sm sm:btn-md"
+              onClick={() => setOpenChat(null)}
+            >
+              <MdClose size={24} />
+            </button>
+          </div>
+          <div className="xs:tooltip xs:tooltip-left" data-tip="Exit">
+            <button
+              className="flex-grow xs:flex-grow-0 btn btn-ghost btn-sm sm:btn-md"
+              onClick={() => removePeer(user.id)}
+            >
+              <MdOutlineExitToApp size={24} />
+            </button>
+          </div>
         </div>
       </div>
       <div

@@ -4,20 +4,12 @@ import React from "react";
 import { toast } from "react-hot-toast";
 import { HiUserAdd } from "react-icons/hi";
 import { SiGooglechat } from "react-icons/si";
-import { Howl } from "howler";
 import ChatView from "./ChatView";
 import Layout from "./Layout";
 import PeerView from "./PeerView";
 import { DCEventData, EventData, Message, Peer, User } from "./types";
 import UsersView from "./UsersView";
-
-var sound = new Howl({
-  src: ["/notification.mp3"],
-});
-
-const notification = () => {
-  sound.play();
-};
+import { notification } from "./utils";
 
 interface HomeViewProps {
   me: User;
@@ -51,9 +43,13 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
           break;
         case "removeUser":
           removePeer(data.id);
+          setChatInvites((users) =>
+            users.filter((user) => user.id !== data.id)
+          );
           setUsers((users) => users.filter((user) => user.id !== data.id));
           break;
         case "chatInvite":
+          notification("invite");
           setChatInvites((chatInvites) => [...chatInvites, data.user]);
           break;
         case "chatInviteCancel":
@@ -210,7 +206,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         ...messages,
         { ...data.message, read: isInChat },
       ]);
-      if (!isInChat) notification();
+      if (!isInChat) notification("message");
     }
   };
 

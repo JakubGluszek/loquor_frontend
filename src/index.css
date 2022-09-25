@@ -15,12 +15,12 @@
 
   /* Handle */
   ::-webkit-scrollbar-thumb {
-    @apply bg-accent;
+    @apply bg-base-200;
   }
 
   /* Handle on hover */
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-accent-focus;
+    @apply bg-base-100;
   }
 }
 
