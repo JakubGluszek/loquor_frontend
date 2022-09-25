@@ -8,8 +8,8 @@ import Layout from "./Layout";
 
 const App: React.FC = () => {
   const [username, setUsername] = React.useState<string | null>(null);
-  const [me, setMe] = React.useState<User | null>(null);
-
+  const [me, setMe] = React.useState<User>();
+   
   const socket = useSocketServer({ username, setMe });
 
   if (!username) {
@@ -18,7 +18,7 @@ const App: React.FC = () => {
 
   if (!me || !socket)
     return (
-      <Layout>
+      <Layout user={me}>
         <div className="flex-grow flex flex-col items-center justify-center">
           <Loader size={"xl"} variant="oval" color="green" />
         </div>

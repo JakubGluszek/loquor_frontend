@@ -162,6 +162,17 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     });
   }, [peers]);
 
+  React.useEffect(() => {
+    const pathname = window.location.pathname;
+    const paths = pathname.split("/");
+
+    if (pathname.includes("invite") && paths.length === 4) {
+      const user = { id: paths[2], username: paths[3] };
+      sendInvite(user);
+      window.history.replaceState({}, document.title, window.location.origin);
+    }
+  }, []);
+
   const handleOnIceCandidate = (
     { candidate }: RTCPeerConnectionIceEvent,
     target: string
@@ -370,7 +381,7 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
         </label>
       </label>
 
-      <Layout username={me.username}>
+      <Layout user={me}>
         <div className="flex-grow flex flex-col sm:flex-row overflow-y-auto min-h-0">
           {/* chats */}
           <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:py-4 border-b sm:border-r gap-2 sm:gap-5">

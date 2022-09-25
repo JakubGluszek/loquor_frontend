@@ -1,27 +1,16 @@
 import React from "react";
+import Header from "./Header";
+import { User } from "./types";
 
 interface LayoutProps {
-  username?: string;
+  user?: User;
   children: React.ReactNode;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, username }) => {
+const Layout: React.FC<LayoutProps> = ({ children, user }) => {
   return (
     <div className="h-screen flex flex-col bg-base-300">
-      <header className="navbar h-16 border-b">
-        <div className="navbar-start"></div>
-        <div className="navbar-center">
-          <span className="text-xl">Loquor</span>
-        </div>
-        <div className="navbar-end">
-          <img
-            className="rounded w-10 h-10"
-            src={`https://ui-avatars.com/api/?name=${username ?? "?"}`}
-            alt="Me"
-          />
-        </div>
-      </header>
-
+      <Header user={user}/>
       <main className="w-full border-b p-4">
         <h1 className="text-center">
           Chat with others... <span className="font-semibold">privately!</span>
