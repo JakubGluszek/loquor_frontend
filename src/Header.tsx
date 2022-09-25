@@ -10,7 +10,7 @@ interface Props {
 
 const Header: React.FC<Props> = ({ user }) => {
   const copyInviteLink = () => {
-    copy(`${window.location.host}/invite/${user?.id}/${user?.username}`);
+    copy(`${window.location.origin}/invite/${user?.id}/${user?.username}`);
     toast("Invite link copied to clipboard");
   };
 
