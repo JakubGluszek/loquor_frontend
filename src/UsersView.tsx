@@ -83,14 +83,14 @@ const UsersView: React.FC<UsersViewProps> = ({
             sortedUsers.map((user) => (
               <div
                 key={user.id}
-                className="flex flex-row flex-wrap items-center border bg-base-100 gap-4 p-2 rounded"
+                className="flex flex-row flex-wrap items-center border-2 border-base-100 hover:bg-base-200 gap-4 p-2 sm:p-4 rounded"
               >
                 <img
                   className="rounded w-8 h-8 sm:w-12 sm:h-12"
                   src={`https://ui-avatars.com/api/?name=${user.username}`}
                   alt={user.username}
                 />
-                <span className="flex-grow text-lg sm:text-2xl font-bold">
+                <span className="flex-grow text-lg sm:text-2xl text-highlight">
                   {user.username}
                 </span>
                 {invitedUsers.includes(user) ? (
@@ -111,7 +111,9 @@ const UsersView: React.FC<UsersViewProps> = ({
               </div>
             ))
           ) : (
-            <div className="flex-grow flex items-center justify-center">No other users online</div>
+            <div className="flex-grow flex items-center justify-center text-xl">
+              <span className="text-primary">0</span>&nbsp;users online.
+            </div>
           )}
         </div>
       </div>

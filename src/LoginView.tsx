@@ -10,11 +10,12 @@ const LoginView: React.FC<LoginViewProps> = ({ setUsername }) => {
   return (
     <div className="min-h-screen w-full flex flex-col gap-4 xs:gap-8 items-center justify-center bg-base-300 text-xs xs:text-base">
       <h1 className="text-lg xs:text-2xl">
-        Welcome to <span className="font-bold">Loquor</span>
+        Welcome to <span className="text-highlight">Loquor</span>
       </h1>
       <p className="text-center">
-        A platform where you can chat with others{" "}
-        <span className="font-extrabold">directly</span>.
+        A platform where you can chat
+        <span className="text-highlight">&nbsp;directly&nbsp;</span>
+        with others.
       </p>
       <div className="flex flex-col gap-2 xs:gap-4 p-2 py-4 xs:p-8 border bg-base-100 rounded">
         <input

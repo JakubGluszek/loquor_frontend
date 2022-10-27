@@ -27,6 +27,8 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
   const openChatState = React.useRef<User | null>();
   openChatState.current = openChat;
   const [viewInvite, setViewInvite] = React.useState<User | null>(null);
+  const viewInviteRef = React.useRef<User | null>();
+  viewInviteRef.current = viewInvite;
   const [parent] = useAutoAnimate<HTMLDivElement>();
 
   React.useEffect(() => {
@@ -47,6 +49,9 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
             users.filter((user) => user.id !== data.id)
           );
           setUsers((users) => users.filter((user) => user.id !== data.id));
+          if (viewInviteRef.current?.id === data.id) {
+            setViewInvite(null);
+          }
           break;
         case "chatInvite":
           notification("invite");
@@ -342,45 +347,42 @@ const HomeView: React.FC<HomeViewProps> = ({ me, socket }) => {
     <>
       {/* modals */}
       <input type="checkbox" id="handleInvite" className="modal-toggle" />
-      <label htmlFor="handleInvite" className="modal bg-base-300 bg-opacity-60">
+
+      {viewInvite && (
         <label
-          className="modal-box flex flex-col items-center gap-8"
-          htmlFor=""
+          htmlFor="handleInvite"
+          className="modal bg-base-300 bg-opacity-60"
         >
-          {viewInvite ? (
-            <>
-              <p className="text-lg text-center">
-                <span className="font-bold">{viewInvite.username}</span> sent
-                you a chat invitation!
-              </p>
-              <div className="flex flex-row items-center gap-8">
-                <button
-                  className=""
-                  onClick={() => handleInvite(viewInvite, false)}
-                >
-                  Reject
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => handleInvite(viewInvite, true)}
-                >
-                  Accept
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p>Whoops.. the invite just got cancelled!</p>
-              <p>(Click anywhere to exit.)</p>
-            </>
-          )}
+          <label
+            className="modal-box flex flex-col items-center gap-8"
+            htmlFor=""
+          >
+            <p className="text-lg text-center">
+              <span className="font-bold">{viewInvite.username}</span> sent you
+              a chat invitation!
+            </p>
+            <div className="flex flex-row items-center gap-8">
+              <button
+                className=""
+                onClick={() => handleInvite(viewInvite, false)}
+              >
+                Reject
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleInvite(viewInvite, true)}
+              >
+                Accept
+              </button>
+            </div>
+          </label>
         </label>
-      </label>
+      )}
 
       <Layout user={me}>
         <div className="flex-grow flex flex-col sm:flex-row overflow-y-auto min-h-0">
           {/* chats */}
-          <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:py-4 border-b sm:border-r gap-2 sm:gap-5">
+          <div className="w-full sm:max-w-[100px] min-h-16 sm:h-full flex flex-row sm:flex-col items-center sm:py-4 border-y bg-base-200 border-2 sm:border-r gap-2 sm:gap-5">
             <div className="w-fit px-4 h-16 flex flex-col items-center justify-center">
               <SiGooglechat size={32} className="w-6 h-6 sm:w-8 sm:h-8" />
             </div>

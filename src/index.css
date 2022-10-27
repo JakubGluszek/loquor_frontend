@@ -2,7 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "cascadia";
+  src: url("fonts/CascadiaMono-Regular.woff2");
+  font-weight: normal;
+}
+
+@font-face {
+  font-family: "cascadia";
+  src: url("/fonts/CascadiaMono-Light.woff2");
+  font-weight: lighter;
+}
+
+@font-face {
+  font-family: "cascadia";
+  src: url("/fonts/CascadiaMono-SemiBold.woff2");
+  font-weight: bolder;
+}
+
+@font-face {
+  font-family: "cascadia";
+  src: url("/fonts/CascadiaMono-Bold.woff2");
+  font-weight: bold;
+}
+
+@font-face {
+  font-family: "cascadia";
+  src: url("/fonts/CascadiaMono-Italic.woff2");
+  font-style: italic;
+}
+
 @layer base {
+  html {
+    @apply font-cascadia;
+  }
+
   /* width */
   ::-webkit-scrollbar {
     @apply w-2.5;
@@ -40,6 +74,10 @@
   }
 
   .btn {
-    @apply rounded;
+    @apply rounded font-mono;
+  }
+
+  .text-highlight {
+    @apply font-bold text-primary font-mono;
   }
 }

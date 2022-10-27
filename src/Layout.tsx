@@ -10,13 +10,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, user }) => {
   return (
     <div className="h-screen flex flex-col bg-base-300">
-      <Header user={user}/>
-      <main className="w-full border-b p-4">
-        <h1 className="text-center">
-          Chat with others... <span className="font-semibold">privately!</span>
-        </h1>
-      </main>
-
+      <Header user={user} />
       {children}
     </div>
   );

@@ -15,14 +15,18 @@ const Header: React.FC<Props> = ({ user }) => {
   };
 
   return (
-    <header className="navbar h-16 border-b">
-      <div className="navbar-start"></div>
-      <div className="navbar-center">
-        <span className="text-xl">Loquor</span>
+    <header className="navbar h-16 border-b border-base-100 border-4 sm:px-4 bg-base-200">
+      <div className="navbar-start">
+        <span className="text-xl text-primary font-extrabold font-mono">
+          Loquor
+        </span>
       </div>
       <div className="navbar-end gap-4">
         {user && (
-          <div className="xs:tooltip xs:tooltip-left" data-tip="Copy invite link">
+          <div
+            className="xs:tooltip xs:tooltip-left"
+            data-tip="Copy invite link"
+          >
             <button
               className="h-10 w-10 flex items-center justify-center hover:text-primary"
               onClick={() => copyInviteLink()}

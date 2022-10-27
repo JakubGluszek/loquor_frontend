@@ -3,66 +3,10 @@ import cuid from "cuid";
 import { formatDistance } from "date-fns";
 import { MdClose, MdOutlineExitToApp } from "react-icons/md";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+
 import { User, Message, DCEventData } from "./types";
 
-interface ChatMessageProps {
-  message: Message;
-  me: User;
-}
-
-const handleWord = (word: string, index: number): string | React.ReactNode => {
-  if (word.includes("http") && word.startsWith("http"))
-    return (
-      <>
-        {index > 0 && <>&nbsp;</>}
-        <a href={word} className="link link-primary" target="_blank">
-          {word}
-        </a>
-      </>
-    );
-  return (
-    <>
-      {index > 0 && <>&nbsp;</>}
-      {word}
-    </>
-  );
-};
-
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, me }) => {
-  return (
-    <div className="flex flex-row gap-2 p-1 sm:p-2 border-b bg-base-300 hover:bg-base-200">
-      <img
-        className="rounded w-6 h-6 sm:w-8 sm:h-8"
-        src={`https://ui-avatars.com/api/?name=${message.author.username}`}
-        alt={message.author.username}
-      />
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-row items-center gap-4">
-          <span
-            className={`text-base xs:text-lg font-bold ${
-              message.author.id === me.id ? "text-primary" : "text-accent"
-            }`}
-          >
-            {message.author.username}
-          </span>
-          <span className="text-xs xs:text-sm opacity-60">
-            {formatDistance(new Date(), new Date(message.timestamp), {
-              includeSeconds: true,
-            })}{" "}
-            ago
-          </span>
-        </div>
-        <p className="">
-          {message.body.split(" ").map((word, i) => (
-            <span key={i}>{handleWord(word, i)}</span>
-          ))}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-interface ChatViewProps {
+interface Props {
   me: User;
   user: User;
   messages: Message[];
@@ -72,7 +16,7 @@ interface ChatViewProps {
   removePeer: (userID: string) => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({
+const ChatView: React.FC<Props> = ({
   me,
   user,
   messages,
@@ -143,7 +87,7 @@ const ChatView: React.FC<ChatViewProps> = ({
           src={`https://ui-avatars.com/api/?name=${user.username}`}
           alt={user.username}
         />
-        <span className="text-sm xs:text-lg sm:text-2xl font-bold text-accent">
+        <span className="text-sm xs:text-lg sm:text-2xl text-highlight">
           {user.username}
         </span>
         <div className="xs:ml-auto flex-grow xs:flex-grow-0 flex flex-row flex-row-wrap xs:flex-nowrap items-center gap-2">
@@ -199,6 +143,67 @@ const ChatView: React.FC<ChatViewProps> = ({
         >
           Send
         </button>
+      </div>
+    </div>
+  );
+};
+
+interface ChatMessageProps {
+  message: Message;
+  me: User;
+}
+
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, me }) => {
+  /** Analyzes given string.
+   * If it matches certain criteria it will be transformed into a custom component, e.g: a clickable link.
+   */
+  const handleWord = (
+    word: string,
+    index: number
+  ): string | React.ReactNode => {
+    if (word.includes("http") && word.startsWith("http"))
+      return (
+        <>
+          {index > 0 && <>&nbsp;</>}
+          <a href={word} className="link link-primary" target="_blank">
+            {word}
+          </a>
+        </>
+      );
+    return (
+      <>
+        {index > 0 && <>&nbsp;</>}
+        {word}
+      </>
+    );
+  };
+  return (
+    <div className="flex flex-row gap-2 p-1 sm:p-2 border-b bg-base-300 hover:bg-base-200">
+      <img
+        className="rounded w-6 h-6 sm:w-8 sm:h-8"
+        src={`https://ui-avatars.com/api/?name=${message.author.username}`}
+        alt={message.author.username}
+      />
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-row items-center gap-4">
+          <span
+            className={`text-base xs:text-lg font-bold ${message.author.id === me.id ? "text-accent" : "text-primary"
+              }`}
+          >
+            {message.author.username}
+          </span>
+          <span className="text-xs xs:text-sm opacity-60">
+            {formatDistance(new Date(), new Date(message.timestamp), {
+              includeSeconds: true,
+            })}{" "}
+            ago
+          </span>
+        </div>
+        <p className="">
+          {message.body.split(" ").map((word, i) => (
+            <span key={i}>{handleWord(word, i)}</span>
+          ))}
+        </p>
       </div>
     </div>
   );

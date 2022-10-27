@@ -11,7 +11,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        ubuntu: ["Ubuntu Mono", "monospace"],
+        cascadia: ["Cascadia", "mono"],
       },
     },
   },
