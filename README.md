@@ -2,7 +2,7 @@
 
 ## About
 
-Demo website might not work since I'm using a public stun server and it's reliability is frankly bad.
+Demo website might not work since I'm using a public stun server and it's frankly not reliable.
 Might solve this issue some day by simply hosting my own stun server.
 
 It's a web based peer to peer chat app built with React. Chat is built on top of the WebRTC API.
